@@ -93,7 +93,7 @@
    ========================================================= */
 
 /* ---------- Polices (chargées si réseau, sinon repli système) ---------- */
-const VERSION='0.48.0';
+const VERSION='0.49.0';
 const FD='"MochiyEmb","Mochiy Pop One","Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif';
 const FU='"ZenEmb","Zen Maru Gothic",system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif';
 try{ for(const f of ['40px MochiyEmb','700 20px ZenEmb','900 20px ZenEmb']) document.fonts.load(f,'Aあ'); document.fonts.load('40px MochiyEmb','ハカセぽ悪夢屋根裏墓所心臓'); }catch(e){} // katakana et quelques kanji/kana absents du sous-ensemble d'origine (police complétée)
@@ -1138,6 +1138,7 @@ function gameOver(cause){
   state='over'; overT=0; overCause=cause; pilot.hold=false;
   game.score=Math.floor(game.X/PX_PER_M)+Math.max(0,Math.floor(game.X/PX_PER_M)-NIGHT_M)+game.lucs*3+game.bonus;
   game.newBest=game.score>best;
+  INST.over=game.newBest&&!!instMode()&&!instSnoozed()&&(()=>{ try{ const d=new Date().toDateString(); if(localStorage.getItem('ilimba.instOver')===d) return false; localStorage.setItem('ilimba.instOver',d); return true; }catch(e){ return false; } })();
   game.bankGain=game.lucs; SAVE.bank+=game.lucs; SAVE.bestM=Math.max(SAVE.bestM,Math.floor(game.X/PX_PER_M)); misOver(); SAVE.runs=(SAVE.runs||0)+1; saveColl();
   if(game.newBest){ best=game.score; try{ localStorage.setItem('mousselins.best',best); }catch(e){} }
   SFX.over(); game.lines=1;
@@ -4146,10 +4147,10 @@ function isStandalone(){ try{ return window.navigator.standalone===true||matchMe
 function fsApi(){ const d=document, el=d.documentElement; return !!((el.requestFullscreen||el.webkitRequestFullscreen)&&(d.fullscreenEnabled!==false||d.webkitFullscreenEnabled)); }
 function isFS(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
 let iosTip=false, iosTipT=0;
-function fsVisible(){ if(window.__cover||isStandalone()) return false; return fsApi()||IS_IOS; }
+function fsVisible(){ if(window.__cover||isStandalone()) return false; if(IS_IOS&&!IN_FRAME&&!fsApi()&&instMode()&&!instSnoozed()) return false; return fsApi()||IS_IOS; } // sur iPhone, le bouton « installer » remplace l'aide plein écran
 function fsRect(){ const m=muteRect(); return {x:m.x,y:m.y+m.r*2+10,r:m.r}; }
 function toggleFS(){
-  if(!fsApi()){ iosTip=!iosTip; iosTipT=0; return; }
+  if(!fsApi()){ if(IS_IOS&&!IN_FRAME){ instOpen('ios'); return; } iosTip=!iosTip; iosTipT=0; return; }
   try{
     if(isFS()){ const ex=document.exitFullscreen||document.webkitExitFullscreen; if(ex){ const q=ex.call(document); if(q&&q.catch) q.catch(()=>{}); } }
     else { const el=document.documentElement, rq=el.requestFullscreen||el.webkitRequestFullscreen;
@@ -4190,7 +4191,133 @@ function drawIosTip(){
   ctx.restore();
 }
 
-const NEWS='Bouton pause + annonce des mises à jour';
+/* ---------- Installer l'appli (v0.49) ---------- */
+const INST={evt:null,card:null,t:0,pending:null,over:false,copied:false,msg:'',hit:[],btn:null};
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); INST.evt=e; });
+window.addEventListener('appinstalled',()=>{ INST.evt=null; if(INST.card==='and') INST.card=null; try{ localStorage.setItem('ilimba.installed','1'); }catch(e){} });
+function instSnoozed(){ try{ return Date.now()<(+localStorage.getItem('ilimba.instSnooze')||0); }catch(e){ return false; } }
+function instSnooze(days){ try{ localStorage.setItem('ilimba.instSnooze',String(Date.now()+days*864e5)); }catch(e){} }
+function instMode(){ if(window.__cover||isStandalone()) return null; if(IN_FRAME) return 'itch'; if(INST.evt) return 'and'; if(IS_IOS) return 'ios'; return null; }
+function instBtnVisible(){ return state==='title'&&!INST.card&&!REVEAL&&!ALBUM.open&&!MK.open&&!MI.open&&MK.k<0.05&&MI.k<0.05&&!!instMode()&&!instSnoozed(); }
+function instRect(){ const f=fsRect(); return fsVisible()?{x:f.x,y:f.y+f.r*2+10,r:f.r}:f; }
+function instOpen(m){ INST.card=m; INST.t=0; INST.copied=false; INST.msg=''; }
+// --- sauvegarde en code (copier / coller) ---
+function saveCode(){ const o={v:1,c:SAVE,b:best}; return 'ILIMBA-'+btoa(unescape(encodeURIComponent(JSON.stringify(o)))); }
+function importCode(txt){ try{ const m=/ILIMBA-([A-Za-z0-9+/=]+)/.exec(String(txt||'').replace(/\s+/g,'')); if(!m) return false; const o=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    if(!o||!o.c||!Array.isArray(o.c.own)||!o.c.own.length) return false;
+    localStorage.setItem('ilimba.coll',JSON.stringify(o.c)); if(+o.b>0) localStorage.setItem('mousselins.best',String(Math.max(+o.b,best))); localStorage.setItem('ilimba.welDone','1'); sessionStorage.setItem('ilimba.imported','1');
+    if(location.hash) history.replaceState(null,'',location.pathname+location.search); location.reload(); return true; }catch(e){ return false; } }
+function copyText(s){ let ok=false;
+  const viaExec=()=>{ try{ const ta=document.createElement('textarea'); ta.value=s; ta.style.cssText='position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;'; ta.contentEditable='true'; document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0,s.length); const r=document.execCommand('copy'); ta.remove(); return r; }catch(e){ return false; } };
+  if(IN_FRAME||!(navigator.clipboard&&navigator.clipboard.writeText)) ok=viaExec();
+  if(!ok&&navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(s).then(()=>{ INST.copied=true; INST.msg=''; },()=>{ if(!viaExec()){ try{ window.prompt('Copie ce code de sauvegarde :',s); }catch(e){} } INST.copied=true; }); return; }
+  if(!ok){ try{ window.prompt('Copie ce code de sauvegarde :',s); }catch(e){} }
+  INST.copied=true; INST.msg=''; }
+function pasteSave(){ const ask=()=>{ let s=null; try{ s=window.prompt('Colle ici ton code de sauvegarde (il commence par ILIMBA-) :',''); }catch(e){} if(s!=null&&!importCode(s)) INST.msg='Code introuvable… copie-le à nouveau.'; };
+  try{ if(navigator.clipboard&&navigator.clipboard.readText){ navigator.clipboard.readText().then(t=>{ if(!importCode(t)) ask(); },ask); return; } }catch(e){} ask(); }
+function instDo(act){ // actions qui demandent un vrai geste de l'utilisateur : exécutées au relâchement du doigt
+  if(act==='install'){ const e=INST.evt; INST.card=null; if(!e) return; INST.evt=null; try{ e.prompt(); e.userChoice.then(c=>{ if(c&&c.outcome==='accepted'){ try{ localStorage.setItem('ilimba.installed','1'); }catch(err){} } }).catch(()=>{}); }catch(err){} }
+  else if(act==='copy') copyText(saveCode());
+  else if(act==='open'){ try{ window.open(PAGES_URL+'#import','_blank'); }catch(e){} }
+  else if(act==='paste') pasteSave(); }
+// --- dessin ---
+function phoneIco(x,y,s,col,arrow){ ctx.save(); ctx.translate(x,y); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=2.2; ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.beginPath(); ctx.roundRect(-s*0.42,-s*0.7,s*0.84,s*1.4,s*0.16); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-s*0.12,s*0.52); ctx.lineTo(s*0.12,s*0.52); ctx.stroke();
+  if(arrow){ ctx.beginPath(); ctx.moveTo(0,-s*0.4); ctx.lineTo(0,s*0.18); ctx.moveTo(-s*0.2,-s*0.02); ctx.lineTo(0,s*0.2); ctx.lineTo(s*0.2,-s*0.02); ctx.stroke(); }
+  ctx.restore(); }
+function drawInstBtn(){ INST.btn=null; if(!instBtnVisible()) return; const {x,y,r}=instRect(), t=game.time, b=Math.abs(Math.sin(t*2.6))*3, itch=instMode()==='itch'; INST.btn={x,y,r};
+  ctx.save(); homeGlow(x,y,r*1.9,0.35+0.15*Math.sin(t*3)); ctx.fillStyle='#ff6fa8'; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2.4; ctx.stroke();
+  phoneIco(x,y-b*0.6,r*0.62,'#fff',true);
+  if(W>=700){ const lab=itch?'version appli ↗':'installer ?', k=0.5+0.5*Math.sin(t*3); ctx.globalAlpha=0.75+0.25*k; ctx.font='800 13px '+FU; ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.lineJoin='round';
+    ctx.strokeStyle='#fff6fb'; ctx.lineWidth=5; ctx.strokeText(lab,x-r-10,y); ctx.fillStyle='#c2407a'; ctx.fillText(lab,x-r-10,y); }
+  ctx.restore(); }
+function instAppIcon(x,y,s){ ctx.save(); ctx.fillStyle='rgba(40,10,40,0.25)'; ctx.beginPath(); ctx.roundRect(x-s/2+2,y-s/2+4,s,s,s*0.23); ctx.fill();
+  const P=new Path2D(); P.roundRect(x-s/2,y-s/2,s,s,s*0.23); ctx.save(); ctx.clip(P); ctx.fillStyle=gcache('instIco'+s,()=>{ const g=ctx.createLinearGradient(0,y-s/2,0,y+s/2); g.addColorStop(0,'#ffd6ec'); g.addColorStop(0.7,'#e8d4ff'); g.addColorStop(0.71,'#9be08a'); g.addColorStop(1,'#6fc46a'); return g; }); ctx.fillRect(x-s/2,y-s/2,s,s);
+  ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.arc(x+s*0.24,y-s*0.22,s*0.16,0,7); ctx.fill(); sakura(x-s*0.3,y-s*0.28,s*0.08,'#ffb3d1',0.3);
+  drawKawaii(INST_MEM||(INST_MEM={kind:1,r:20,seed:3,pal:KINDS[1].pal,acc:ACCS[0],blink:2,step:1,sq:0,st:0,spin:0,blend:1,off:0,g:true,pitch:1,hop:1,fx:0,fy:0}),x,y+s*0.33,{r:s*0.3}); ctx.restore();
+  ctx.strokeStyle='#1a1024'; ctx.lineWidth=2.4; ctx.stroke(P); ctx.restore(); }
+let INST_MEM=null;
+function instCardBox(cw,ch){ ctx.fillStyle='rgba(8,6,16,'+(0.55*Math.min(1,INST.t*6))+')'; ctx.fillRect(0,0,W,H); const a=Math.min(1,INST.t*6), sc=0.92+0.08*a;
+  ctx.translate(W/2,H/2); ctx.scale(sc,sc); ctx.translate(-W/2,-H/2); ctx.globalAlpha=a;
+  const P=new Path2D(); P.roundRect(W/2-cw/2,H/2-ch/2,cw,ch,18); if(!WASHI_PAT) WASHI_PAT=ctx.createPattern(WASHI,'repeat');
+  ctx.save(); ctx.translate(3,5); ctx.fillStyle='rgba(20,6,30,0.35)'; ctx.fill(P); ctx.restore(); ctx.fillStyle=WASHI_PAT||'#fff8ef'; ctx.fill(P); ctx.strokeStyle='#1a1024'; ctx.lineWidth=4; ctx.stroke(P);
+  const xx=W/2+cw/2-22, xy=H/2-ch/2+22; ctx.fillStyle='#fff'; ctx.strokeStyle='#1a1024'; ctx.lineWidth=2.4; ctx.beginPath(); ctx.arc(xx,xy,13,0,7); ctx.fill(); ctx.stroke(); ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(xx-5,xy-5); ctx.lineTo(xx+5,xy+5); ctx.moveTo(xx+5,xy-5); ctx.lineTo(xx-5,xy+5); ctx.stroke();
+  INST.hit.push({x:xx-20,y:xy-20,w:40,h:40,act:'close'}); return {x:W/2-cw/2,y:H/2-ch/2}; }
+function instPill(x,y,w,h,txt,fill,fg,fs,act){ const B=new Path2D(); B.roundRect(x-w/2,y-h/2,w,h,h/2); ctx.save(); ctx.translate(0,3); ctx.fillStyle='rgba(40,10,40,0.25)'; ctx.fill(B); ctx.restore(); ctx.fillStyle=fill; ctx.fill(B); ctx.strokeStyle='#1a1024'; ctx.lineWidth=2.6; ctx.stroke(B);
+  ctx.font='800 '+(fs||16)+'px '+FU; ctx.fillStyle=fg||'#fff'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(txt,x,y+1); if(act) INST.hit.push({x:x-w/2-4,y:y-h/2-6,w:w+8,h:h+12,act}); }
+function instLink(x,y,txt,act){ ctx.font='700 13px '+FU; ctx.fillStyle='rgba(42,26,53,0.6)'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(txt,x,y); const w=ctx.measureText(txt).width; INST.hit.push({x:x-w/2-14,y:y-14,w:w+28,h:28,act}); }
+function instPerk(x,y,ico,txt){ ctx.save(); ctx.fillStyle='#ffe3f0'; ctx.strokeStyle='#1a1024'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.arc(x,y,12,0,7); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='#c2407a'; ctx.fillStyle='#c2407a'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.lineJoin='round';
+  if(ico==='fs'){ for(const [sx,sy] of [[-1,-1],[1,-1],[1,1],[-1,1]]){ ctx.beginPath(); ctx.moveTo(x+sx*6,y+sy*2.5); ctx.lineTo(x+sx*6,y+sy*6); ctx.lineTo(x+sx*2.5,y+sy*6); ctx.stroke(); } }
+  else if(ico==='off'){ ctx.beginPath(); ctx.arc(x,y+3,6.5,Math.PI*1.15,Math.PI*1.85); ctx.stroke(); ctx.beginPath(); ctx.arc(x,y+3,3.5,Math.PI*1.2,Math.PI*1.8); ctx.stroke(); ctx.beginPath(); ctx.arc(x,y+3.5,1.4,0,7); ctx.fill(); ctx.beginPath(); ctx.moveTo(x-6,y-6); ctx.lineTo(x+6,y+6); ctx.stroke(); }
+  else if(ico==='home'){ phoneIco(x,y,11,'#c2407a',false); ctx.fillStyle='#ff6fa8'; ctx.beginPath(); ctx.roundRect(x-2.4,y-4,4.8,4.8,1.4); ctx.fill(); }
+  else { ctx.beginPath(); ctx.moveTo(x,y+6); ctx.bezierCurveTo(x-9,y,x-6,y-7,x,y-3); ctx.bezierCurveTo(x+6,y-7,x+9,y,x,y+6); ctx.fill(); }
+  ctx.restore(); ctx.font='700 14px '+FU; ctx.fillStyle='#2a1a35'; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(txt,x+20,y+1); }
+function instShare(x,y,s){ ctx.save(); ctx.strokeStyle='#2f7bf6'; ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.beginPath(); ctx.moveTo(x-s*0.32,y-s*0.1); ctx.lineTo(x-s*0.5,y-s*0.1); ctx.lineTo(x-s*0.5,y+s*0.6); ctx.lineTo(x+s*0.5,y+s*0.6); ctx.lineTo(x+s*0.5,y-s*0.1); ctx.lineTo(x+s*0.32,y-s*0.1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x,y+s*0.28); ctx.lineTo(x,y-s*0.62); ctx.moveTo(x-s*0.24,y-s*0.4); ctx.lineTo(x,y-s*0.64); ctx.lineTo(x+s*0.24,y-s*0.4); ctx.stroke(); ctx.restore(); }
+function instNum(x,y,n){ ctx.fillStyle='#ff6fa8'; ctx.strokeStyle='#1a1024'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,13,0,7); ctx.fill(); ctx.stroke(); ctx.font='900 14px '+FU; ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(n,x,y+1); }
+function instMsg(y){ if(!INST.msg) return; ctx.font='800 13px '+FU; ctx.fillStyle='#d23a5a'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(INST.msg,W/2,y); }
+function drawInstCard(){ INST.hit.length=0; const C=INST.card; if(!C||window.__cover) return; const t=game.time; ctx.save(); ctx.setTransform(DPR,0,0,DPR,0,0); ctx.lineJoin='round'; ctx.textBaseline='middle';
+  if(C==='and'){ const cw=Math.min(W-28,560), ch=Math.min(H-24,300), o=instCardBox(cw,ch), L=cw<470;
+    if(!L){ instAppIcon(o.x+86,o.y+100,104); for(let s=0;s<4;s++){ const q=(t*0.7+s*0.25)%1; sparkleStar(o.x+86+Math.cos(s*1.6)*70,o.y+92+Math.sin(s*1.6)*60,7*Math.sin(q*Math.PI)+1,1,'#ffd34a'); } }
+    const px=L?o.x+40:o.x+186, mx=L?W/2:o.x+170+(cw-200)/2; ctx.textAlign='center'; mangaText('Installe Ilimba !',mx,o.y+40,Math.min(26,cw*0.055),'#ff8ccf',{outerColor:'#fff'});
+    instPerk(px,o.y+82,'fs','Plein écran, sans barre'); instPerk(px,o.y+114,'off','Jouable sans connexion'); instPerk(px,o.y+146,'home','Une icône sur ton écran d’accueil'); instPerk(px,o.y+178,'save','Ta collection est gardée');
+    instPill(L?W/2:W/2+40,o.y+ch-62,230,46,'INSTALLER','#ff6fa8','#fff',18,'install'); instLink(L?W/2:W/2+40,o.y+ch-22,'Plus tard','later'); }
+  else if(C==='ios'||C==='itch'){ const itch=C==='itch', cw=Math.min(W-24,600), ch=Math.min(H-20,330), o=instCardBox(cw,ch), done=INST.copied, bw=cw*0.3, bh=Math.min(148,ch-170);
+    ctx.textAlign='center'; mangaText(itch?'Joue avec la version appli':'Installe Ilimba sur ton iPhone',W/2,o.y+34,Math.min(23,cw*0.042),'#ff8ccf',{outerColor:'#fff'});
+    const cx=[o.x+cw*0.18,o.x+cw*0.5,o.x+cw*0.82], cy=o.y+86;
+    for(let i=0;i<3;i++){ const B=new Path2D(); B.roundRect(cx[i]-bw/2,cy-18,bw,bh,14); ctx.fillStyle=i===0?'#fff1f7':'rgba(255,255,255,0.8)'; ctx.fill(B); ctx.strokeStyle='rgba(26,16,36,0.5)'; ctx.lineWidth=1.6; ctx.stroke(B); instNum(cx[i],cy-18,i+1); }
+    ctx.textAlign='center'; ctx.font='800 14px '+FU; ctx.fillStyle='#2a1a35'; ctx.fillText('Garde ta progression',cx[0],cy+14);
+    ctx.font='600 11.5px '+FU; ctx.fillStyle='#6a4a62'; ctx.fillText(itch?'la version appli ne voit':'l’appli ne voit pas',cx[0],cy+34); ctx.fillText(itch?'pas ta partie itch.io':'ta partie Safari',cx[0],cy+49);
+    if(done) instPill(cx[0],cy+88,bw*0.86,36,'✓ Copiée !','#5bbf73','#fff',14,'copy'); else instPill(cx[0],cy+88,bw*0.86,36,'Copier ma sauvegarde','#ff6fa8','#fff',Math.min(12.5,bw*0.07),'copy');
+    if(itch){ ctx.font='800 14px '+FU; ctx.fillStyle='#2a1a35'; ctx.fillText('Ouvre la version',cx[1],cy+14); ctx.fillText('appli',cx[1],cy+32); instPill(cx[1],cy+88,bw*0.86,36,'Ouvrir ↗','#ff6fa8','#fff',14,'open');
+      ctx.font='800 14px '+FU; ctx.fillStyle='#2a1a35'; ctx.fillText('Touche',cx[2],cy+20); ctx.fillText('« J’ai déjà',cx[2],cy+48); ctx.fillText('une partie »',cx[2],cy+66); }
+    else { instShare(cx[1],cy+26,28); ctx.font='800 14px '+FU; ctx.fillStyle='#2a1a35'; ctx.fillText('Touche Partager',cx[1],cy+66); ctx.font='600 11.5px '+FU; ctx.fillStyle='#6a4a62'; ctx.fillText('dans Safari',cx[1],cy+86);
+      { const bx=cx[2]-bw*0.4, by=cy+12, w2=bw*0.8; ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(26,16,36,0.35)'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.roundRect(bx,by,w2,30,8); ctx.fill(); ctx.stroke();
+        ctx.save(); ctx.strokeStyle='#2a1a35'; ctx.lineWidth=2; ctx.lineCap='round'; const ax=bx+w2-16, ay=by+15; ctx.beginPath(); ctx.roundRect(ax-7,ay-7,14,14,3.5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(ax,ay-3.4); ctx.lineTo(ax,ay+3.4); ctx.moveTo(ax-3.4,ay); ctx.lineTo(ax+3.4,ay); ctx.stroke(); ctx.restore();
+        ctx.font='700 '+Math.min(10.5,w2*0.068)+'px '+FU; ctx.fillStyle='#2a1a35'; ctx.textAlign='left'; ctx.fillText('Sur l’écran d’accueil',bx+7,by+15.5); ctx.textAlign='center'; }
+      ctx.font='800 14px '+FU; ctx.fillStyle='#2a1a35'; ctx.fillText('« Sur l’écran',cx[2],cy+66); ctx.fillText('d’accueil »',cx[2],cy+84);
+      if(done){ ctx.save(); ctx.translate(cx[1],cy+bh-34+Math.sin(t*5)*3); ctx.fillStyle='#ff6fa8'; ctx.beginPath(); ctx.moveTo(-10,0); ctx.lineTo(10,0); ctx.lineTo(0,12); ctx.closePath(); ctx.fill(); ctx.restore(); } }
+    ctx.textAlign='center'; ctx.font='700 13px '+FU; ctx.fillStyle='#3a2050'; ctx.fillText(itch?'Là-bas, colle ton code avec « J’ai déjà une partie ».':'Puis ouvre Ilimba depuis son icône et touche « J’ai déjà une partie ».',W/2,o.y+ch-42);
+    instLink(W/2,o.y+ch-17,'Plus tard','later'); }
+  else if(C==='wel'||C==='ok'){ const cw=Math.min(W-28,560), ch=Math.min(H-24,300), o=instCardBox(cw,ch), ok=C==='ok';
+    const own=SAVE.own.slice(0,3); while(own.length<3) own.push([0,5,1][own.length]);
+    own.forEach((k,i)=>{ const m=INST['m'+i]||(INST['m'+i]={kind:k,r:22,seed:k*7.3,pal:KINDS[k].pal,acc:ACCS[k%ACCS.length],blink:2+i,step:k,sq:0,st:0,spin:0,blend:1,off:0,g:true,pitch:1,hop:1,fx:0,fy:0}); drawKawaii(m,W/2+(i-1)*58,o.y+(ok?118:112)+Math.sin(t*6+i)*(ok?6:2),{r:22}); });
+    ctx.textAlign='center';
+    if(!ok){ mangaText('Bienvenue dans l’appli !',W/2,o.y+38,Math.min(26,cw*0.05),'#ff8ccf',{outerColor:'#fff'});
+      instPill(W/2,o.y+170,Math.min(300,cw-60),46,'J’ai déjà une partie','#ff6fa8','#fff',17,'paste'); ctx.font='700 12px '+FU; ctx.fillStyle='#6a4a62'; ctx.textAlign='center'; ctx.fillText('colle le code de sauvegarde que tu as copié',W/2,o.y+204);
+      instMsg(o.y+224); instPill(W/2,o.y+ch-36,220,38,'Nouvelle partie','#fff8ef','#3a2050',15,'new'); }
+    else { mangaText('Progression retrouvée !',W/2,o.y+38,Math.min(26,cw*0.05),'#ff8ccf',{outerColor:'#fff'});
+      for(let s=0;s<8;s++){ const q=(t*0.6+s*0.125)%1; sparkleStar(W/2+Math.cos(s*0.8)*cw*0.38,o.y+90+Math.sin(s*1.3)*40,9*Math.sin(q*Math.PI)+1,1,s%2?'#ffd34a':'#ff8fc4'); }
+      const chips=[[SAVE.own.length+' / 12 Ilimbas','#ff8fc4'],[fmtN(SAVE.bank)+' lucioles','#ffd34a'],['record '+fmtN(SAVE.bestM)+' m','#9ad0ff']], cwid=Math.min(150,(cw-60)/3-8);
+      chips.forEach(([tx,c],i)=>{ const x=W/2+(i-1)*(cwid+12), y=o.y+178; ctx.fillStyle=c; ctx.strokeStyle='#1a1024'; ctx.lineWidth=2; ctx.beginPath(); ctx.roundRect(x-cwid/2,y-16,cwid,32,16); ctx.fill(); ctx.stroke(); ctx.font='800 '+Math.min(14,cwid*0.1)+'px '+FU; ctx.fillStyle='#2a1a35'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(tx,x,y+1); });
+      instPill(W/2,o.y+ch-42,200,44,'JOUER !','#ff6fa8','#fff',18,'close'); } }
+  ctx.restore(); }
+function instOverLay(){ const k=Math.min((W-20)/360,(H-20-SAFE.t-SAFE.b)/618,1.35), pr=W/2+180*k, cw=220, ch=190; if(W-pr<cw+20) return null; const cx=(pr+W)/2, cy=H*0.56; return {cx,cy,cw,ch,x:cx-cw/2,y:cy-ch/2}; }
+function drawInstOver(){ if(state!=='over'||!INST.over||INST.card||overT<1.2) return; const L=instOverLay(); if(!L) return; const t=game.time, a=Math.min(1,(overT-1.2)*4), {cx,cy,cw,ch,x,y}=L;
+  ctx.save(); ctx.globalAlpha=a; ctx.translate(cx,cy+(1-a)*20); ctx.rotate(0.03); ctx.translate(-cx,-cy); const P=new Path2D(); P.roundRect(x,y,cw,ch,18);
+  ctx.save(); ctx.translate(3,5); ctx.fillStyle='rgba(20,6,30,0.35)'; ctx.fill(P); ctx.restore(); if(!WASHI_PAT) WASHI_PAT=ctx.createPattern(WASHI,'repeat'); ctx.fillStyle=WASHI_PAT||'#fff8ef'; ctx.fill(P); ctx.strokeStyle='#1a1024'; ctx.lineWidth=3; ctx.stroke(P);
+  instAppIcon(cx,y+40,50); for(let s=0;s<4;s++){ const q=(t*0.7+s*0.25)%1; sparkleStar(cx+Math.cos(s*1.6)*40,y+36+Math.sin(s*1.6)*28,6*Math.sin(q*Math.PI)+1,1,'#ffd34a'); }
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='800 16px '+FU; ctx.fillStyle='#c2407a'; ctx.fillText('Nouveau record !',cx,y+82); ctx.font='700 12.5px '+FU; ctx.fillStyle='#3a2050'; ctx.fillText('Installe Ilimba pour',cx,y+103); ctx.fillText('rejouer en plein écran',cx,y+119);
+  const B=new Path2D(); B.roundRect(cx-80,y+132,160,34,17); ctx.save(); ctx.translate(0,3); ctx.fillStyle='rgba(40,10,40,0.25)'; ctx.fill(B); ctx.restore(); ctx.fillStyle='#ff6fa8'; ctx.fill(B); ctx.strokeStyle='#1a1024'; ctx.lineWidth=2.6; ctx.stroke(B); ctx.font='800 14px '+FU; ctx.fillStyle='#fff'; ctx.fillText('INSTALLER',cx,y+150);
+  ctx.font='700 11.5px '+FU; ctx.fillStyle='rgba(42,26,53,0.5)'; ctx.fillText('Plus tard',cx,y+178); ctx.restore(); }
+function instOverTap(px,py){ if(state!=='over'||!INST.over||INST.card||overT<1.2) return false; const L=instOverLay(); if(!L) return false; const {cx,y}=L;
+  if(Math.abs(px-cx)<88&&py>y+126&&py<y+172){ INST.over=false; instOpen(instMode()||'and'); return true; }
+  if(Math.abs(px-cx)<60&&py>y+166&&py<y+192){ INST.over=false; return true; }
+  if(Math.abs(px-cx)<L.cw/2&&py>L.y&&py<L.y+L.ch) return true; return false; }
+function instTap(px,py){ // true = toucher consommé ; les actions « geste » partent au relâchement
+  if(INST.card){ if(INST.t<0.25) return true; for(const R of INST.hit){ if(px>=R.x&&px<=R.x+R.w&&py>=R.y&&py<=R.y+R.h){ const a=R.act;
+        if(a==='close'){ if(INST.card==='wel') try{ localStorage.setItem('ilimba.welDone','1'); }catch(e){} INST.card=null; }
+        else if(a==='later'){ instSnooze(3); INST.card=null; }
+        else if(a==='new'){ try{ localStorage.setItem('ilimba.welDone','1'); }catch(e){} INST.card=null; }
+        else INST.pending=a; try{ SFX.member(); }catch(e){} return true; } }
+    if(INST.card!=='wel'&&INST.card!=='ok') INST.card=null; return true; }
+  if(INST.btn&&Math.hypot(px-INST.btn.x,py-INST.btn.y)<INST.btn.r+8){ AU.woke=true; instOpen(instMode()); return true; }
+  return false; }
+function instInit(){ try{ if(sessionStorage.getItem('ilimba.imported')==='1'){ sessionStorage.removeItem('ilimba.imported'); instOpen('ok'); return; } }catch(e){}
+  try{ const fresh=!(SAVE.runs>0)&&!(SAVE.bestM>0)&&!(best>0); if((isStandalone()||location.hash==='#import')&&fresh&&localStorage.getItem('ilimba.welDone')!=='1') instOpen('wel'); }catch(e){} }
+
+const NEWS='Installe Ilimba comme une appli';
 function pauseBtnVisible(){ return state==='play'&&!window.__cover&&!game.arm&&!pilot.fell; }
 function pauseGame(){ if(state!=='play') return; state='pause'; game.resumeT=0; pointers.clear(); pilot.hold=false; try{ release(); }catch(e){} }
 function resumeGame(){ if(state!=='pause'||game.resumeT>0) return; game.resumeT=2.1; }
@@ -6003,7 +6130,7 @@ function drawTitle(){
   if(best>0&&!window.__cover&&HK>0.03){ ctx.globalAlpha=HK; recordCard(bx,byy+bw*0.18+8+rfs*0.95,best,rfs); ctx.globalAlpha=1; }
   ctx.font='600 11px '+FU; ctx.textAlign='right'; ctx.textBaseline='bottom'; ctx.fillStyle='rgba(90,40,80,0.6)'; if(!window.__cover) ctx.fillText('v'+VERSION,W-10-SAFE.r,H-6-SAFE.b);
   titlePetals();
-  if(!window.__cover){ drawMuteBtn(); drawFsBtn(); }
+  if(!window.__cover){ drawMuteBtn(); drawFsBtn(); drawInstBtn(); }
 }
 function recordTag(x,y){
   const rt='Record : '+best; ctx.font='800 13px '+FU; const rw=ctx.measureText(rt).width+30;
@@ -6216,7 +6343,7 @@ function render(){
   if(state==='over'&&overT>1.2){ if(!OVS.c||OVS.c.width!==cvs.width||OVS.c.height!==cvs.height) OVS.c=makeCanvas(cvs.width,cvs.height); const g=OVS.c.getContext('2d'); g.setTransform(1,0,0,1,0,0); g.drawImage(cvs,0,0); OVS.ok=true; }
   }
   if(state==='title'){ try{ drawTitle(); }catch(e){ console.error(e); safeTitle(); } }
-  else { try{ heCassette(); drawBascule(); drawHUD(); runObjective(); drawRescueEdge(); drawPortrait(); drawZoneBanner(); drawMascot(); drawPauseBtn(); if(state==='over') drawOver(); }catch(e){ console.error(e); } try{ drawReveal(); }catch(e){ console.error(e); } }
+  else { try{ heCassette(); drawBascule(); drawHUD(); runObjective(); drawRescueEdge(); drawPortrait(); drawZoneBanner(); drawMascot(); drawPauseBtn(); if(state==='over'){ drawOver(); drawInstOver(); } }catch(e){ console.error(e); } try{ drawReveal(); }catch(e){ console.error(e); } }
   if(state==='pause'&&game.resumeT>0){ ctx.fillStyle='rgba(8,6,16,0.35)'; ctx.fillRect(0,0,W,H); const e=2.1-game.resumeT, n=3-Math.floor(e/0.7); dCountdown(Math.max(1,n),(e%0.7)/0.7); }
   else if(state==='pause'){
     ctx.fillStyle='rgba(8,6,16,0.55)'; ctx.fillRect(0,0,W,H);
@@ -6236,6 +6363,7 @@ function render(){
    ========================================================= */
 const AU={ac:null,master:null,fx:null,rumble:null,noise:null,muted:false,next:0,beat:0,deg:4};
 try{ AU.muted=localStorage.getItem('mousselins.mute')==='1'; }catch(e){}
+instInit();
 try{ const sv=localStorage.getItem('ilimba.ver'); if(sv&&sv!==VERSION) game.news={t:-1.2,dur:7.5}; localStorage.setItem('ilimba.ver',VERSION); }catch(e){}
 const PINK=(()=>{ try{ const len=Math.round(((window.AudioContext||window.webkitAudioContext)?48000:44100)*2), a=new Float32Array(len); let last=0; for(let i=0;i<len;i++){ const w=Math.random()*2-1; last=(last+0.02*w)/1.02; a[i]=last*3.2; } return a; }catch(e){ return null; } })();
 /* iOS : le Web Audio suit le bouton silencieux de l'iPhone → on passe la session en « lecture » */
@@ -6428,12 +6556,13 @@ function press(px,py){
     AU.woke=true; startGame(); return; }
   if(state==='play'){ pilotPress(); return; }
   if(state==='pause'){ resumeGame(); return; }
-  if(state==='over'&&overT>0.8){ if(px!=null&&OVHOME&&Math.hypot(px-OVHOME.x,py-OVHOME.y)<OVHOME.r){ OVHOME.pressT=game.time; try{ SFX.member(); }catch(e){} setTimeout(goHome,140); return; } resetGame(); startGame(); }
+  if(state==='over'&&overT>0.8){ if(px!=null&&instOverTap(px,py)) return; if(px!=null&&OVHOME&&Math.hypot(px-OVHOME.x,py-OVHOME.y)<OVHOME.r){ OVHOME.pressT=game.time; try{ SFX.member(); }catch(e){} setTimeout(goHome,140); return; } resetGame(); startGame(); }
 }
 const pointers=new Set();
 cvs.addEventListener('pointerdown',e=>{
   e.preventDefault(); audioInit();
   if(H>W&&!window.__cover) return;
+  if((INST.card||INST.btn)&&instTap(e.clientX,e.clientY)) return;
   if(REVEAL||ALBUM.open||MK.open||MI.open){ press(e.clientX,e.clientY); return; }
   if(iosTip){ const L=iosTipBtn(); if(IN_FRAME&&Math.abs(e.clientX-L.bx)<L.bw/2+8&&Math.abs(e.clientY-L.by)<L.bh/2+8){ try{ window.open(PAGES_URL,'_blank'); }catch(err){} } iosTip=false; return; }
   if(pauseBtnVisible()){ const fr=fsRect(); if(Math.hypot(e.clientX-fr.x,e.clientY-fr.y)<fr.r+12){ pauseGame(); return; } }
@@ -6444,13 +6573,14 @@ cvs.addEventListener('pointerdown',e=>{
   if(Math.hypot(e.clientX-mr.x,e.clientY-mr.y)<mr.r+10){ if(state==='title'&&!AU.woke&&!AU.muted){ AU.woke=true; game.musicT=1.6; return; } toggleMute(); return; }
   pointers.add(e.pointerId); press(e.clientX,e.clientY);
 },{passive:false});
-const up=e=>{ if(pointers.delete(e.pointerId)&&pointers.size===0) release(); };
+const up=e=>{ if(INST.pending){ const a=INST.pending; INST.pending=null; instDo(a); } if(pointers.delete(e.pointerId)&&pointers.size===0) release(); };
 window.addEventListener('pointerup',up); window.addEventListener('pointercancel',up);
 cvs.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
 cvs.addEventListener('contextmenu',e=>e.preventDefault());
 ['touchend','pointerup','click','keydown'].forEach(ev=>window.addEventListener(ev,()=>{ if(AU.ac) audioWake(); else if(ev!=='keydown') audioInit(); },{passive:true}));
 const JUMP_KEYS=new Set(['Space','ArrowUp','KeyW','KeyZ','Enter']);
 window.addEventListener('keydown',e=>{
+  if(INST.card){ if(e.code==='Escape'&&INST.card!=='wel'){ INST.card=null; } if(JUMP_KEYS.has(e.code)) e.preventDefault(); return; }
   if(JUMP_KEYS.has(e.code)){ e.preventDefault(); if(e.repeat) return; audioInit(); press(); }
   else if(e.code==='KeyM'){ audioInit(); toggleMute(); }
   else if(e.code==='KeyF'&&e.shiftKey){ PERF.show=!PERF.show; }
@@ -6520,9 +6650,9 @@ function frame(now){
   if(!(dt>0)) dt=0; if(dt>0.05) dt=0.05;
   let ts=1;
   if(game.cine){ const C=game.cine; C.rt+=dt; if(C.rt>1.3||state!=='play') game.cine=null; }
-  game.dtReal=dt; if(iosTip) iosTipT+=dt; try{ revealStep(); }catch(e){}
+  game.dtReal=dt; if(iosTip) iosTipT+=dt; if(INST.card) INST.t+=dt; try{ revealStep(); }catch(e){}
   if(state==='pause'&&game.resumeT>0){ game.resumeT-=dt; if(game.resumeT<=0){ game.resumeT=0; state='play'; } }
-  const w0=performance.now(); try{ update(dt*ts); render(); drawFps(); }catch(e){ console.error(e); ctx=MAINCTX; } PERF.ms+=((performance.now()-w0)-PERF.ms)*0.1;
+  const w0=performance.now(); try{ update(dt*ts); INST.btn=null; render(); drawInstCard(); drawFps(); }catch(e){ console.error(e); ctx=MAINCTX; } PERF.ms+=((performance.now()-w0)-PERF.ms)*0.1;
   try{ audioTick(); }catch(e){}
 }
 resize(true);
