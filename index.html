@@ -93,7 +93,7 @@
    ========================================================= */
 
 /* ---------- Polices (chargées si réseau, sinon repli système) ---------- */
-const VERSION='0.49.2';
+const VERSION='0.49.3';
 const FD='"MochiyEmb","Mochiy Pop One","Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif';
 const FU='"ZenEmb","Zen Maru Gothic",system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif';
 try{ for(const f of ['40px MochiyEmb','700 20px ZenEmb','900 20px ZenEmb']) document.fonts.load(f,'Aあ'); document.fonts.load('40px MochiyEmb','ハカセぽ悪夢屋根裏墓所心臓'); }catch(e){} // katakana et quelques kanji/kana absents du sous-ensemble d'origine (police complétée)
@@ -6646,7 +6646,7 @@ function frame(now){
   requestAnimationFrame(frame);
   if(window.__freeze) return;
   if(RAFI.length<90){ if(rafPrev) RAFI.push(now-rafPrev); rafPrev=now; if(RAFI.length===90){ const a=RAFI.slice().sort((x,y)=>x-y); rafMed=a[45]; rafHalf=a[45]<10; } }
-  if(rafHalf){ rafOdd=!rafOdd; if(rafOdd) return; }
+  if(rafHalf&&now-lastT<rafMed*1.5) return; // écran 120 Hz : 1 image sur 2, choisie au temps écoulé (v0.49.3 : l'ancienne alternance stricte se décalait au moindre rafraîchissement sauté → à-coups de 25 ms)
   const dtMs=now-lastT; let dt=dtMs/1000; lastT=now; try{ perfTick(dtMs); }catch(e){}
   if(!(dt>0)) dt=0; if(dt>0.05) dt=0.05;
   let ts=1;
