@@ -80,7 +80,7 @@
 </style>
 </head>
 <body>
-<canvas id="c" tabindex="0" aria-label="Ilimba : touchez l'écran pour faire sauter les Ilimbas"></canvas>
+<canvas id="c" tabindex="0" aria-label="Ilimba : touchez l'écran pour faire sauter les Ilimbas"></canvas><canvas id="ui" aria-hidden="true" style="pointer-events:none;display:none"></canvas>
 <div id="safe"></div>
 <script>
 (()=>{
@@ -93,13 +93,15 @@
    ========================================================= */
 
 /* ---------- Polices (chargées si réseau, sinon repli système) ---------- */
-const VERSION='0.49.5';
+const VERSION='0.49.7';
 const FD='"MochiyEmb","Mochiy Pop One","Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif';
 const FU='"ZenEmb","Zen Maru Gothic",system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif';
 try{ for(const f of ['40px MochiyEmb','700 20px ZenEmb','900 20px ZenEmb']) document.fonts.load(f,'Aあ'); document.fonts.load('40px MochiyEmb','ハカセぽ悪夢屋根裏墓所心臓'); }catch(e){} // katakana et quelques kanji/kana absents du sous-ensemble d'origine (police complétée)
 
 /* ---------- Canvas & dimensions ---------- */
 const cvs=document.getElementById('c');
+// v0.49.7 : sur ordinateur à écran Retina, le décor du jeu est dessiné en ×1 (fluide à 120 images/s) et le texte/l'interface en ×2 sur un calque à part (net)
+const UIC=document.getElementById('ui'), UIG=UIC.getContext('2d'); const UI={on:false,used:false,dpr:1,keep:null,kd:1};
 let ctx=cvs.getContext('2d',{alpha:false}); const MAINCTX=ctx;
 // compatibilité anciens navigateurs (Safari < 16, etc.) : roundRect
 (function(){ function rr(x,y,w,h,r){ if(typeof r==='object'&&r) r=r[0]||r.x||0; r=Math.max(0,Math.min(+r||0,Math.abs(w)/2,Math.abs(h)/2));
@@ -1453,7 +1455,7 @@ function drawHalfRes(x1,fn){ // dessine fn() (coordonnées écran) en demi-réso
   const sw=Math.min(w,Math.ceil(x1*DPR*qf)); if(sw<=2) return;
   const g=HRC.g; g.setTransform(1,0,0,1,0,0); g.globalAlpha=1; g.globalCompositeOperation='source-over'; g.clearRect(0,0,Math.min(w,sw+2),h);
   g.save(); g.beginPath(); g.rect(0,0,sw+2,h); g.clip(); g.setTransform(DPR*qf,0,0,DPR*qf,0,0); g.lineJoin='round'; g.lineCap='round';
-  ctx=g; try{ fn(); }catch(e){ console.error(e); } finally{ ctx=MAINCTX; g.restore(); }
+  const _kc=ctx; ctx=g; try{ fn(); }catch(e){ console.error(e); } finally{ ctx=_kc; g.restore(); }
   ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.imageSmoothingEnabled=true; ctx.drawImage(HRC.c,0,0,sw,h,0,0,sw/qf,h/qf); ctx.restore();
 }
 function drawBrumeCached(sx,sy){
@@ -1466,7 +1468,7 @@ function drawBrumeCached(sx,sy){
   const sw=Math.min(w,Math.ceil((xr-camX+60)*q)); if(sw<=2) return;
   const g=BRC.g; g.setTransform(1,0,0,1,0,0); g.globalAlpha=1; g.globalCompositeOperation='source-over'; g.clearRect(0,0,w,h);
   g.setTransform(q,0,0,q,-camX*q,OY*q); g.lineJoin='round'; g.lineCap='round';
-  ctx=g; try{ drawBrume(); }catch(e){ console.error(e); } finally{ ctx=MAINCTX; }
+  const _kc=ctx; ctx=g; try{ drawBrume(); }catch(e){ console.error(e); } finally{ ctx=_kc; }
   ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.imageSmoothingEnabled=true; ctx.drawImage(BRC.c,0,0,sw,h,sx*k,sy*k,sw/qf,h/qf); ctx.restore();
 }
 function lastMember(){ for(let i=members.length-1;i>=0;i--){ const m=members[i]; if(m&&Number.isFinite(m.x)&&Number.isFinite(m.y)) return m; } return null; }
@@ -3181,7 +3183,7 @@ function drawBranch(b){
       const bx=b.dir>0?Cx-170:Cx-12, bw=182, by=y0, bh=Cy+170-y0;
       const c=makeCanvas(bw*kq,bh*kq), g=c.getContext('2d'); g.setTransform(kq,0,0,kq,-bx*kq,-by*kq);
       const RC=new Path2D(); RC.rect(b.baseX-500,sy(b.baseX)-120,1000,700); RC.addPath(b.path); g.clip(RC,'evenodd');
-      ctx=g; try{ DEC.web(Cx,Cy,b.dir,0,uy,1); }catch(e){} finally{ ctx=MAINCTX; }
+      const _kc=ctx; ctx=g; try{ DEC.web(Cx,Cy,b.dir,0,uy,1); }catch(e){} finally{ ctx=_kc; }
       Object.assign(w,{c,k:kq,bx,by,bw,bh}); }
     ctx.drawImage(w.c,w.bx,w.by,w.bw,w.bh);
     DEC.web(Cx,Cy,b.dir,t,uy,2); }
@@ -4375,9 +4377,7 @@ const ALBUM={open:false,t:0,hop:{},L:null};
 function openAlbum(){ ALBUM.open=true; ALBUM.t=0; try{ SFX.member(); }catch(e){} }
 function closeAlbum(){ ALBUM.open=false; ALBUM.sel=null; }
 function miniBadge(x,y,txt,t){ const k=1+0.08*Math.sin(t*5); ctx.save(); ctx.translate(x,y); ctx.scale(k,k); ctx.fillStyle='#ff4f7a'; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill(); ctx.stroke(); ctx.font='800 10px '+FU; ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(txt,0,1); ctx.restore(); }
-function lanternSign(y,sw,rr,label,col,icon){ // pancarte commune Album / Marché : même taille, même style (en cache)
-  lanternSignV(y,sw,rr,label,col,icon); return; // v0.49.5 : en direct (le texte en cache paraissait flou) const fs=Math.round(Math.max(11,rr*0.62)), W2=fs*9+40, H2=fs*2.6+8;
-  const c=vspr('ls'+label+col+icon+fs,W2,H2,W2/2,H2/2,()=>lanternSignV(0,0,rr,label,col,icon)); ctx.save(); ctx.translate(0,y); ctx.rotate(-sw*0.6); blitSpr(c,0,0); ctx.restore(); }
+function lanternSign(y,sw,rr,label,col,icon){ lanternSignV(y,sw,rr,label,col,icon); } // pancarte commune Album / Marché — v0.49.5 : dessinée en direct (le texte en cache paraissait flou)
 function lanternSignV(y,sw,rr,label,col,icon){
   ctx.save(); ctx.translate(0,y); ctx.rotate(-sw*0.6); const fs=Math.round(Math.max(11,rr*0.62)); ctx.font='800 '+fs+'px '+FU;
   const h=Math.round(fs*1.9), ir=h*0.36, tw=Math.ceil(ctx.measureText('Marché').width)+ir*2+fs*1.3;
@@ -4965,7 +4965,7 @@ function hudIcon(m,x,fy){
   const D=DPR, S0=30; let c=m._hud;
   if(!c||m._hudD!==D||game.time-(m._hudT||-9)>0.6||m._hudT>game.time){ if(!c||m._hudD!==D){ c=m._hud=makeCanvas(S0*D,S0*D); m._hudD=D; }
     const g=c.getContext('2d'); g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,c.width,c.height); g.setTransform(D,0,0,D,0,0); g.lineJoin='round'; g.lineCap='round';
-    ctx=g; try{ drawMous(m,S0/2,S0*0.78,{r:8.5}); }catch(e){} finally{ ctx=MAINCTX; } m._hudT=game.time; }
+    const _kc=ctx; ctx=g; try{ drawMous(m,S0/2,S0*0.78,{r:8.5}); }catch(e){} finally{ ctx=_kc; } m._hudT=game.time; }
   ctx.drawImage(c,x-S0/2,fy-S0*0.78,S0,S0);
 }
 function polyPath(pts){ const p=new Path2D(); pts.forEach((q,i)=>i?p.lineTo(q[0],q[1]):p.moveTo(q[0],q[1])); p.closePath(); return p; }
@@ -5226,12 +5226,12 @@ function treePts(h,lv,seed){ const pts=[]; let sd=seed; const rnd=()=>(sd=(sd*16
 const TREE_SPR={};
 function treeStaticSpr(sp,lv,h){ // fleurs fixes, en cache (dessinées une fois par taille)
   const key=sp+lv+'_'+Math.round(h)+'_'+DPR; let c=TREE_SPR[key]; if(c) return c; const w=h*1.3, hh=h*1.3; c=makeCanvas(w*DPR,hh*DPR); const g=c.getContext('2d'); g.setTransform(DPR,0,0,DPR,w/2*DPR,hh*DPR);
-  ctx=g; try{ const P=treePts(h,lv,sp==='p'?11:sp==='g'?23:37);
+  const _kc=ctx; ctx=g; try{ const P=treePts(h,lv,sp==='p'?11:sp==='g'?23:37);
     if(sp==='p'){ const big=lv>=3, Q=treePts(h,lv,11).slice(0,big?20:9);
       for(const [px,py,i] of P) sakura(px,py,h*0.022,i%2?'#fff0f6':'#ffc6de',i*0.7); // petits pétales de fond
       Q.forEach(([px,py,i],j)=>{ const k=h*(big?0.0046:0.0042)*(0.8+((j*37)%5)*0.08); sakuraBloom(px,py,k,j*0.9,j%3===2); }); }
     if(sp==='g'&&lv<3) for(const [px,py,i] of P){ ctx.fillStyle=i%2?'#fff7c8':'#ffffff'; ctx.beginPath(); ctx.arc(px,py,h*0.016,0,7); ctx.fill(); ctx.fillStyle='#ffc94a'; ctx.beginPath(); ctx.arc(px,py,h*0.007,0,7); ctx.fill(); }
-  }finally{ ctx=MAINCTX; } c.w=w; c.hh=hh; TREE_SPR[key]=c; return c; }
+  }finally{ ctx=_kc; } c.w=w; c.hh=hh; TREE_SPR[key]=c; return c; }
 function sakuraBloom(x,y,s,rot,white){ ctx.save(); ctx.translate(x,y); ctx.scale(s,s); ctx.rotate(rot); ctx.lineJoin='round';
   for(let k=0;k<5;k++){ ctx.rotate(Math.PI*2/5); ctx.fillStyle=white?'#fff6fa':'#ffb8d4'; ctx.strokeStyle='#7a2a50'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(0,0); ctx.bezierCurveTo(-6.5,-5,-6,-13,-1.8,-13.5); ctx.lineTo(0,-11); ctx.lineTo(1.8,-13.5); ctx.bezierCurveTo(6,-13,6.5,-5,0,0); ctx.fill(); ctx.stroke();
     ctx.strokeStyle=white?'rgba(255,150,190,0.7)':'rgba(230,80,140,0.6)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,-2); ctx.lineTo(0,-8); ctx.stroke(); }
@@ -5262,7 +5262,7 @@ function homeTree(x,y,h,t,ph,sp,worry,idx){ // décor de l'arbre selon son nivea
 // porte-bonheur : une petite Ilimba suspendue par Ilimba possédée (en cache)
 const CHSPR={};
 function charmSpr(k,r){ const key=k+'_'+r+'_'+DPR; let c=CHSPR[key]; if(c) return c; const w=r*3.4, h=r*3.1; c=makeCanvas(w*DPR,h*DPR); const g=c.getContext('2d'); g.setTransform(DPR,0,0,DPR,0,0);
-  ctx=g; try{ const K=KINDS[k]; drawKawaii({kind:k,pal:K.pal,seed:k*7,r},w/2,h-r*0.12,{r,closed:k===8}); }finally{ ctx=MAINCTX; } c.w=w; c.h=h; CHSPR[key]=c; return c; }
+  const _kc=ctx; ctx=g; try{ const K=KINDS[k]; drawKawaii({kind:k,pal:K.pal,seed:k*7,r},w/2,h-r*0.12,{r,closed:k===8}); }finally{ ctx=_kc; } c.w=w; c.h=h; CHSPR[key]=c; return c; }
 function homeShiny(k){ return Array.isArray(SAVE.shiny)&&SAVE.shiny.includes(k); }
 function garlandDeco(st,x0,x1,yT,sag,n,port,t){ const yy=u=>yT+sag*2*2*u*(1-u), X=u=>lerp(x0,x1,u), s=port?0.85:1;
   if(st==='paper'){ // fanions en papier
@@ -6094,7 +6094,7 @@ function drawTitle(){
   // papier washi avec une fenêtre ronde sur la forêt
   ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H);
   const SKY=window.__cover?'':mkEff('ciel'), SKB=SKY==='dawn'||SKY==='night'||SKY==='redmoon', NIGHT=SKY==='night'||SKY==='redmoon';
-  { const key=cvs.width+'x'+cvs.height+(SKB?SKY:''); let c=TBG.m.get(key); if(!c){ if(TBG.m.size>1) TBG.m.delete(TBG.m.keys().next().value); c=makeCanvas(cvs.width,cvs.height); const g=c.getContext('2d'); g.setTransform(DPR,0,0,DPR,0,0); g.beginPath(); g.rect(0,0,W,H); ctx=g; try{ washiFill(); washiTint(0,0,0,H,null,0.4); if(SKB){ ctx.fillStyle=homeSkyGrad(SKY); ctx.fillRect(0,0,W,H); } }finally{ ctx=MAINCTX; } TBG.m.set(key,c); }
+  { const key=cvs.width+'x'+cvs.height+(SKB?SKY:''); let c=TBG.m.get(key); if(!c){ if(TBG.m.size>1) TBG.m.delete(TBG.m.keys().next().value); c=makeCanvas(cvs.width,cvs.height); const g=c.getContext('2d'); g.setTransform(DPR,0,0,DPR,0,0); g.beginPath(); g.rect(0,0,W,H); const _kc=ctx; ctx=g; try{ washiFill(); washiTint(0,0,0,H,null,0.4); if(SKB){ ctx.fillStyle=homeSkyGrad(SKY); ctx.fillRect(0,0,W,H); } }finally{ ctx=_kc; } TBG.m.set(key,c); }
     ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(c,0,0); ctx.restore(); }
   ctx.globalAlpha=NIGHT?0:SKY==='dawn'?0.2:0.5; if(ctx.globalAlpha>0) for(let i=0;i<10;i++){ ctx.strokeStyle='#fff'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.arc((i*173+40)%W,(i*311+60)%H,5+(i%4)*5+Math.sin(t+i)*1.5,0,7); ctx.stroke(); } ctx.globalAlpha=1;
   ctx.restore();
@@ -6335,7 +6335,7 @@ function render(){
   drawParts();
   drawNightLight();
   drawZoneDecoFront();
-  drawTexts();
+  if(!uiSplitNow()) drawTexts();
   ctx.setTransform(k,0,0,k,0,k*OY);
   for(const L of LAYERS) if(L.front) drawLayer(L,sx*L.f,sy*L.f);
   ctx.setTransform(DPR,0,0,DPR,0,0);
@@ -6351,7 +6351,8 @@ function render(){
   if(state==='over'&&overT>1.2){ if(!OVS.c||OVS.c.width!==cvs.width||OVS.c.height!==cvs.height) OVS.c=makeCanvas(cvs.width,cvs.height); const g=OVS.c.getContext('2d'); g.setTransform(1,0,0,1,0,0); g.drawImage(cvs,0,0); OVS.ok=true; }
   }
   if(state==='title'){ try{ drawTitle(); }catch(e){ console.error(e); safeTitle(); } }
-  else { try{ heCassette(); drawBascule(); drawHUD(); runObjective(); drawRescueEdge(); drawPortrait(); drawZoneBanner(); drawMascot(); drawPauseBtn(); if(state==='over'){ drawOver(); drawInstOver(); } }catch(e){ console.error(e); } try{ drawReveal(); }catch(e){ console.error(e); } }
+  else { try{ heCassette(); drawBascule(); }catch(e){ console.error(e); } if(uiBegin()){ try{ const kU=DPR*S; ctx.setTransform(kU,0,0,kU,kU*(-camX+sx),kU*(OY+sy)); ctx.lineJoin='round'; ctx.lineCap='round'; drawTexts(); }catch(e){ console.error(e); } ctx.setTransform(DPR,0,0,DPR,0,0); }
+    try{ drawHUD(); runObjective(); drawRescueEdge(); drawPortrait(); drawZoneBanner(); drawMascot(); drawPauseBtn(); if(state==='over'){ drawOver(); drawInstOver(); } }catch(e){ console.error(e); } try{ drawReveal(); }catch(e){ console.error(e); } }
   if(state==='pause'&&game.resumeT>0){ ctx.fillStyle='rgba(8,6,16,0.35)'; ctx.fillRect(0,0,W,H); const e=2.1-game.resumeT, n=3-Math.floor(e/0.7); dCountdown(Math.max(1,n),(e%0.7)/0.7); }
   else if(state==='pause'){
     ctx.fillStyle='rgba(8,6,16,0.55)'; ctx.fillRect(0,0,W,H);
@@ -6605,7 +6606,7 @@ window.addEventListener('pageshow',()=>{ if(AU.ac) audioWake(); });
    ========================================================= */
 let layerTimer=0;
 function resize(first){
-  W=window.innerWidth; H=window.innerHeight; DPR_BASE=Math.min(2,window.devicePixelRatio||1,Math.max(1,Math.sqrt(8.5e6/Math.max(1,W*H)))); DPR=qualityDPR(); // plafond ≈ 8,5 Mpx (v0.49.5 : en v0.49.4, DPR=qualityDPR() était resté dans le commentaire → jeu en ×1, flou)
+  W=window.innerWidth; H=window.innerHeight; DPR_BASE=Math.min(2,window.devicePixelRatio||1,Math.max(1,Math.sqrt(8.5e6/Math.max(1,W*H)))); DPR=mainDPR(); // plafond ≈ 8,5 Mpx (v0.49.5 : en v0.49.4, DPR=qualityDPR() était resté dans le commentaire → jeu en ×1, flou)
   cvs.width=Math.round(W*DPR); cvs.height=Math.round(H*DPR);
   const ar=W/H, vwMin=IS_DESK&&ar>=1.55?Math.min(1500,WORLD_H*ar*1.18):640; // v0.49.4 : sur ordinateur, même largeur de forêt visible que sur un téléphone (un peu plus de ciel et de sol)
   S=Math.min(H/WORLD_H,W/vwMin); VW=W/S; VH=H/S; OY=(VH-WORLD_H)/2;
@@ -6622,18 +6623,27 @@ document.addEventListener('fullscreenchange',()=>setTimeout(()=>resize(false),60
 window.addEventListener('pageshow',()=>resize(false));
 
 let lastT=performance.now();
-const RAFI=[]; let rafHalf=false, rafHi=false, rafPrev=0, rafMed=16.7; const RAFW={n:0,miss:0};
+const RAFI=[]; let rafHalf=false, rafHi=false, rafPrev=0, rafMed=16.7; const RAFW={n:0,miss:0,half:[false,false],key:-1};
 // v0.49.4 : sur ordinateur (souris/trackpad), un écran 120 Hz est servi à 120 images/s ; repli automatique à 60 si la machine ne suit pas. Téléphones : 60 (batterie).
 /* ---------- Résolution adaptative ---------- */
 const QS=[1,1,0.8,0.65], BGQ=[0.62,0.5,0.5,0.5]; let qLvl=0, qLock=false; // premier plan / fond
 const HITCH=[]; const PERF={acc:0,n:0,t:0,pending:null,good:0,lastRaise:-1e9,fps:60,ms:0,show:false,taps:0,tapT:0};
 try{ PERF.show=localStorage.getItem('ilimba.fps')==='1'; }catch(e){}
 function qualityDPR(){ return Math.max(0.75,DPR_BASE*QS[qLvl]); }
-function setQuality(l){ l=clamp(l,0,QS.length-1); if(l===qLvl) return; qLvl=l; DPR=qualityDPR(); cvs.width=Math.round(W*DPR); cvs.height=Math.round(H*DPR); }
+function worldDPR(){ return (IS_DESK&&DPR_BASE>1.3)?1:qualityDPR(); } // décor du jeu : ×1 sur ordinateur Retina (fluide), sinon pleine résolution
+function uiSplitNow(){ return state!=='title'&&!window.__cover&&worldDPR()<qualityDPR()-0.01; }
+function mainDPR(){ return uiSplitNow()?worldDPR():qualityDPR(); }
+function applyDPR(){ const d=mainDPR(), w=Math.round(W*d), h=Math.round(H*d); if(Math.abs(d-DPR)>0.001||cvs.width!==w||cvs.height!==h){ DPR=d; cvs.width=w; cvs.height=h; } }
+function uiBegin(){ if(!uiSplitNow()) return false; const d=qualityDPR(), w=Math.round(W*d), h=Math.round(H*d); if(UIC.width!==w||UIC.height!==h){ UIC.width=w; UIC.height=h; } if(UIC.style.display!=='block') UIC.style.display='block';
+  UIG.setTransform(1,0,0,1,0,0); UIG.globalAlpha=1; UIG.globalCompositeOperation='source-over'; UIG.clearRect(0,0,w,h); UIG.imageSmoothingEnabled=true; UIG.lineJoin='round'; UIG.lineCap='round';
+  UI.keep=ctx; UI.kd=DPR; ctx=UIG; DPR=d; UI.on=true; UI.used=true; ctx.setTransform(d,0,0,d,0,0); return true; }
+function uiEnd(){ if(UI.on){ ctx=MAINCTX; DPR=UI.kd; UI.on=false; } else if(UI.used){ UIG.setTransform(1,0,0,1,0,0); UIG.clearRect(0,0,UIC.width,UIC.height); UIC.style.display='none'; UI.used=false; } }
+function setQuality(l){ l=clamp(l,0,IS_DESK?1:QS.length-1); /* ordinateur : jamais de baisse de netteté du premier plan, seulement le fond */ if(l===qLvl) return; qLvl=l; DPR=mainDPR(); cvs.width=Math.round(W*DPR); cvs.height=Math.round(H*DPR); }
 function perfTick(dtMs){
   { const exp=rafHalf?rafMed*2:rafMed, nowT=performance.now(); if(RAFI.length>=90&&dtMs>exp*1.45&&dtMs<250&&!document.hidden) HITCH.push(nowT); while(HITCH.length&&nowT-HITCH[0]>10000) HITCH.shift(); }
   PERF.fps+=((dtMs>0?1000/dtMs:60)-PERF.fps)*0.08;
   if(window.__noAdapt) return;
+  if(IS_DESK&&rafHi&&!rafHalf){ PERF.acc=0; PERF.n=0; PERF.t=0; return; } // ordinateur à 120 Hz : géré par le suivi des images ratées (frame)
   if(state==='pause'||document.hidden||RAFI.length<90||!(dtMs>0)||dtMs>250){ PERF.acc=0; PERF.n=0; PERF.t=0; return; }
   PERF.acc+=dtMs; PERF.n++; PERF.t+=dtMs; if(PERF.t<2000) return;
   const avg=PERF.acc/PERF.n, target=1000/60; PERF.acc=0; PERF.n=0; PERF.t=0;
@@ -6656,15 +6666,16 @@ function frame(now){
   requestAnimationFrame(frame);
   if(window.__freeze) return;
   if(RAFI.length<90){ if(rafPrev) RAFI.push(now-rafPrev); rafPrev=now; if(RAFI.length===90){ const a=RAFI.slice().sort((x,y)=>x-y); rafMed=a[45]; rafHi=a[45]<10; rafHalf=rafHi&&!IS_DESK; } }
+  if(rafHi&&IS_DESK){ const kk=state==='title'?0:1; if(kk!==RAFW.key){ RAFW.key=kk; RAFW.n=0; RAFW.miss=0; } rafHalf=RAFW.half[kk]; }
   if(rafHalf&&now-lastT<rafMed*1.5) return; // écran 120 Hz : 1 image sur 2, choisie au temps écoulé (v0.49.3 : l'ancienne alternance stricte se décalait au moindre rafraîchissement sauté → à-coups de 25 ms)
   const dtMs=now-lastT; let dt=dtMs/1000; lastT=now; try{ perfTick(dtMs); }catch(e){}
-  if(rafHi&&!rafHalf&&state!=='pause'&&!document.hidden&&dtMs<100){ RAFW.n++; if(dtMs>rafMed*1.6) RAFW.miss++; if(RAFW.n>=240){ if(RAFW.miss>RAFW.n*0.08) rafHalf=true; RAFW.n=0; RAFW.miss=0; } } // trop de ratés à 120 : on repasse à 60
+  if(rafHi&&!rafHalf&&state!=='pause'&&!document.hidden&&dtMs<100){ RAFW.n++; if(dtMs>rafMed*1.6) RAFW.miss++; if(RAFW.n>=240){ if(RAFW.miss>RAFW.n*0.08){ if(qLvl<1) setQuality(1); else { rafHalf=true; if(IS_DESK) RAFW.half[state==='title'?0:1]=true; } } RAFW.n=0; RAFW.miss=0; } } // trop de ratés à 120 : d'abord le fond en plus basse résolution (invisible), sinon 60 images/s — le premier plan reste net
   if(!(dt>0)) dt=0; if(dt>0.05) dt=0.05;
   let ts=1;
   if(game.cine){ const C=game.cine; C.rt+=dt; if(C.rt>1.3||state!=='play') game.cine=null; }
   game.dtReal=dt; if(iosTip) iosTipT+=dt; if(INST.card) INST.t+=dt; try{ revealStep(); }catch(e){}
   if(state==='pause'&&game.resumeT>0){ game.resumeT-=dt; if(game.resumeT<=0){ game.resumeT=0; state='play'; } }
-  const w0=performance.now(); try{ update(dt*ts); INST.btn=null; render(); drawInstCard(); drawFps(); }catch(e){ console.error(e); ctx=MAINCTX; } PERF.ms+=((performance.now()-w0)-PERF.ms)*0.1;
+  const w0=performance.now(); try{ update(dt*ts); INST.btn=null; applyDPR(); render(); drawInstCard(); drawFps(); }catch(e){ console.error(e); ctx=MAINCTX; } uiEnd(); PERF.ms+=((performance.now()-w0)-PERF.ms)*0.1;
   try{ audioTick(); }catch(e){}
 }
 resize(true);
