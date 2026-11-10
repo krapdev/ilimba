@@ -96,7 +96,7 @@
    ========================================================= */
 
 /* ---------- Polices (chargées si réseau, sinon repli système) ---------- */
-const VERSION='0.50.3';
+const VERSION='0.50.4';
 const FD='"MochiyEmb","Mochiy Pop One","Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif';
 const FU='"ZenEmb","Zen Maru Gothic",system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif';
 try{ for(const f of ['40px MochiyEmb','700 20px ZenEmb','900 20px ZenEmb']) document.fonts.load(f,'Aあ'); document.fonts.load('40px MochiyEmb','ハカセぽ悪夢屋根裏墓所心臓'); }catch(e){} // katakana et quelques kanji/kana absents du sous-ensemble d'origine (police complétée)
@@ -5814,7 +5814,7 @@ let MIS_TICK=0;
 function misTick(dt){ if(state!=='play'||!SAVE.daily) return; MIS_TICK+=dt; if(MIS_TICK<0.4) return; MIS_TICK=0; misMax('dist',Math.floor(game.X/PX_PER_M)); misMax('troupe',members.length); }
 function misOver(){ if(!SAVE.daily) return; misMax('dist',Math.floor(game.X/PX_PER_M)); for(const M of SAVE.daily.m){ if(M.t==='runs'&&!M.done){ M.p=Math.min(M.g,M.p+1); if(M.p>=M.g) misDone(M); } } saveColl(); }
 function misClaimable(){ const D=SAVE.daily; return !!D&&(D.m.some(M=>M.done&&!M.cl)||(D.m.every(M=>M.cl)&&!D.egg)); }
-function misClaim(i){ const D=SAVE.daily, M=D&&D.m[i]; if(!M||!M.done||M.cl) return; M.cl=true; SAVE.bank+=MIS_REW[M.tier]; MI.fx={i,t0:game.time,n:MIS_REW[M.tier]};
+function misClaim(i){ const D=SAVE.daily, M=D&&D.m[i]; if(!M||!M.done||M.cl) return; M.cl=true; MIS_GONE[i]=game.time; SAVE.bank+=MIS_REW[M.tier]; MI.fx={i,t0:game.time,n:MIS_REW[M.tier]};
   if(D.m.every(q=>q.cl)&&D.lastAll!==D.day){ D.streak=(D.lastAll===misYesterday(D.day)?(D.streak||0):0)+1; D.lastAll=D.day; }
   saveColl(); try{ if(AU.ac&&!AU.muted) [659,784,988,1319].forEach((f,k)=>tine(f,AU.ac.currentTime+k*0.07,0.1,1.1)); }catch(e){} }
 function misReroll(i){ const D=SAVE.daily, M=D&&D.m[i]; if(!M||M.done||D.rr>=1) return; D.rr++; const P=misPools()[M.tier], other=D.m.map(q=>q.t), c=P.filter(p=>!other.includes(p[0])); const r=misRng(D.day+'@'+i), p=c[Math.floor(r()*c.length)]||P[0];
@@ -5919,10 +5919,10 @@ const MIS_SHORT={runs:g=>g+' parties',lucs:g=>g+' lucioles',dbl:g=>g+' doubles s
 const MIS_VERB={runs:'Joue',lucs:'Ramasse',dbl:'Fais',dist:'Atteins',lant:'Attrape',troupe:'Aie une',rescue:'Réussis'};
 function homeMisCard(x,y,w,h,t,H2){ const D=SAVE.daily; if(!D) return; const gold='#e0a82a'; H2=H2||(v=>v);
   // v0.49.5 : en-tête sur sa propre ligne (plus rien ne chevauche les tickets), texte dessiné en direct (net)
-  const HH=18, all=D.m.every(M=>M.cl), egg=all&&!D.egg, gap=8, ty=y+HH+7, th=Math.max(56,Math.min(h-HH-7,70)), tw=(w-gap*2)/3;
+  const HH=18, all=D.m.every(M=>M.cl), egg=all&&!D.egg, gap=8, ty=y+HH+7, th=Math.max(56,Math.min(h-HH-7,70)), nCl=D.m.filter(M=>M.cl).length, done=all&&D.egg;
   ctx.save(); ctx.textBaseline='middle'; ctx.lineJoin='round';
-  ctx.font='800 11px '+FU; const lab='MISSIONS DU JOUR', lw=ctx.measureText(lab).width+20; ctx.fillStyle='#3a2050'; ctx.strokeStyle='#1a1024'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.roundRect(x,y,lw,HH,HH/2); ctx.fill(); ctx.stroke(); ctx.fillStyle='#ffd34a'; ctx.textAlign='left'; ctx.fillText(lab,x+10,y+HH/2+0.5);
-  { const cd=misCountdown(), opts=[(D.streak?'série '+D.streak+' · ':'')+'encore '+cd,'encore '+cd,cd]; ctx.font='700 10.5px '+FU; let tx=opts[0]; for(const o of opts){ tx=o; if(ctx.measureText(o).width<w-lw-14) break; }
+  ctx.font='800 11px '+FU; const lab='MISSIONS DU JOUR'+(nCl?'  ✓ '+nCl+'/3':''), lw=ctx.measureText(lab).width+20; ctx.fillStyle='#3a2050'; ctx.strokeStyle='#1a1024'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.roundRect(x,y,lw,HH,HH/2); ctx.fill(); ctx.stroke(); ctx.fillStyle='#ffd34a'; ctx.textAlign='left'; ctx.fillText(lab,x+10,y+HH/2+0.5);
+  { const cd=misCountdown(), opts=done?[(D.streak?'série '+D.streak+' · ':'')+'nouvelles dans '+cd,'nouvelles dans '+cd,cd]:[(D.streak?'série '+D.streak+' · ':'')+'encore '+cd,'encore '+cd,cd]; ctx.font='700 10.5px '+FU; let tx=opts[0]; for(const o of opts){ tx=o; if(ctx.measureText(o).width<w-lw-14) break; }
     ctx.textAlign='right'; ctx.strokeStyle='#fff6fb'; ctx.lineWidth=3.5; ctx.strokeText(tx,x+w-2,y+HH/2+0.5); ctx.fillStyle='#8a4fb8'; ctx.fillText(tx,x+w-2,y+HH/2+0.5); }
   ctx.restore();
   if(egg){ const P=new Path2D(); P.roundRect(x,ty,w,th,12); ctx.save(); ctx.translate(2,3); ctx.fillStyle='rgba(40,10,40,0.22)'; ctx.fill(P); ctx.restore(); ctx.fillStyle='#ffe9a8'; ctx.fill(P); ctx.strokeStyle=gold; ctx.lineWidth=2.6; ctx.stroke(P);
@@ -5931,8 +5931,17 @@ function homeMisCard(x,y,w,h,t,H2){ const D=SAVE.daily; if(!D) return; const gol
     const bw=104, bh=32, bx=x+w-bw-12, k=1+0.05*Math.sin(t*6), lx=ex+er+14, lw2=bx-lx-8;
     ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.font='800 '+fitFont('Œuf du jour !',lw2,15,'800',FU)+'px '+FU; ctx.fillStyle='#3a2050'; ctx.fillText('Œuf du jour !',lx,cy-8); ctx.font='700 '+fitFont('Tes 3 missions sont faites',lw2,11,'700',FU)+'px '+FU; ctx.fillStyle='#6a4a7a'; ctx.fillText('Tes 3 missions sont faites',lx,cy+10);
     ctx.save(); ctx.translate(bx+bw/2,cy); ctx.scale(k,k); ctx.fillStyle='#ff86ba'; ctx.strokeStyle='#1a1024'; ctx.lineWidth=2; ctx.beginPath(); ctx.roundRect(-bw/2,-bh/2,bw,bh,bh/2); ctx.fill(); ctx.stroke(); ctx.font='800 13px '+FU; ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.fillText('OUVRIR !',0,1); ctx.restore(); HOME.misHit.push(H2({x,y:ty,w,h:th,act:'egg'})); return; }
-  D.m.forEach((M,i)=>{ const tx=x+i*(tw+gap), C=MIS_COL[M.tier], ready=M.done&&!M.cl; HOME.misHit.push(H2({x:tx,y:ty,w:tw,h:th,act:ready?'claim':'open',i}));
-    misTicket(M,i,tx,ty,tw,th,C,ready,t,gold); }); }
+  if(done){ HOME.misHit.push(H2({x,y,w,h:HH,act:'open'})); return; } // v0.50.4 : tout est fait → une seule ligne
+  // v0.50.4 : un ticket réclamé reçoit un tampon puis s'efface ; les autres prennent sa place
+  const L=[]; let E=0; D.m.forEach((M,i)=>{ const g=M.cl?(MIS_GONE[i]!=null?clamp(1-(t-MIS_GONE[i]-0.35)/0.45,0,1):0):1; if(g<=0) return; const e=g*g*(3-2*g); L.push([M,i,g,e]); E+=e; });
+  const unit=(w+gap)/Math.max(E,1e-3); let cx=x;
+  for(const [M,i,g,e] of L){ const slot=e*unit, C=MIS_COL[M.tier], ready=M.done&&!M.cl;
+    if(M.cl){ const tw0=Math.min(unit,(w+gap)/Math.max(1,L.length))-gap, sc=0.35+0.65*e; ctx.save(); ctx.globalAlpha*=g; ctx.translate(cx+slot/2-gap/2,ty+th/2); ctx.scale(sc,sc); ctx.translate(-tw0/2,-th/2);
+      misTicket(M,i,0,0,tw0,th,C,false,t,gold); const st=clamp((t-MIS_GONE[i])/0.25,0,1); if(st>0){ ctx.save(); ctx.translate(tw0/2,th/2); ctx.rotate(-0.25); ctx.scale(2-st,2-st); ctx.globalAlpha*=st; ctx.strokeStyle='#d6336c'; ctx.lineWidth=3.5; ctx.beginPath(); ctx.arc(0,0,22,0,7); ctx.stroke(); ctx.font='800 22px '+FU; ctx.fillStyle='#d6336c'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('✓',0,1); ctx.restore(); }
+      ctx.restore(); cx+=slot; continue; }
+    const tw=slot-gap; HOME.misHit.push(H2({x:cx,y:ty,w:tw,h:th,act:ready?'claim':'open',i}));
+    misTicket(M,i,cx,ty,tw,th,C,ready,t,gold); cx+=slot; } }
+const MIS_GONE={};
 function misTicket(M,i,tx,ty,tw,th,C,ready,t,gold){ // ticket : [icône | verbe … récompense] / [objectif] / [barre · bouton · « Fait »]
   const bob=ready?Math.sin(t*4+i)*1.2:0, P=new Path2D(); P.roundRect(tx,ty+bob,tw,th,10);
   ctx.save(); if(bob) ctx.translate(0,bob); const T=ty;
@@ -6161,7 +6170,8 @@ function drawTitle(){
   if(MSH>0.5) ctx.restore(); if(NIGHT) homeNightVeilWC(MSH>0.5?MSH:0); else watercolorPass(0.55);
   // logo
   const HK=1-Math.max(MK.k,MI.k); if(HK<1) ctx.globalAlpha=HK;
-  const lx=port?W/2-ts*0.45:Math.max(cx,W*0.36);
+  ctx.font='100px '+FD; const lw0=ctx.measureText('ILIMBA').width*ts/100, sfs=Math.max(12,ts*0.2);
+  let lx=port?W/2-ts*0.45:Math.max(cx,W*0.36); if(!port) lx=Math.max(lx,SAFE.l+10+sfs*0.8+ts*0.45+lw0/2); // v0.50.4 : place pour le bandeau à gauche
   ctx.save(); ctx.translate(lx,ly); ctx.rotate(-0.03+Math.sin(t*1.2)*0.008);
   const tg=ctx.createLinearGradient(0,-ts/2,0,ts/2); tg.addColorStop(0,'#ffe3f2'); tg.addColorStop(0.55,'#ff9cc8'); tg.addColorStop(1,'#d65aa0');
   ctx.font=ts+'px '+FD; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round'; ctx.strokeStyle='#1a1024'; ctx.lineWidth=ts*0.36; ctx.strokeText('ILIMBA',ts*0.05,ts*0.08);
@@ -6169,9 +6179,9 @@ function drawTitle(){
   ctx.font='100px '+FD; const lw2=ctx.measureText('ILIMBA').width*ts/100;
   ctx.restore();
   ctx.font='100px '+FD; const lw=ctx.measureText('ILIMBA').width*ts/100;
-  sealV(lx+lw/2+ts*0.45,ly+ts*0.25,'森の脱出',Math.max(12,ts*0.2),0.05);
+  if(port) sealV(lx+lw/2+ts*0.45,ly+ts*0.25,'森の脱出',sfs,0.05); else sealV(lx-lw/2-ts*0.45,ly+ts*0.22,'森の脱出',sfs,-0.05); // v0.50.4 : bandeau à gauche du titre (la guirlande respire)
   ctx.font='700 '+Math.round(clamp(ts*0.2,12,17))+'px '+FU; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round'; ctx.strokeStyle='#fff6fb'; ctx.lineWidth=5; ctx.strokeText('les Ilimbas et la Brume',lx,ly+ts*0.95); ctx.fillStyle='#8a4fb8'; ctx.fillText('les Ilimbas et la Brume',lx,ly+ts*0.95);
-  spark(lx-lw/2-10,ly-ts*0.35,10,'#fff3a0',t); spark(lx+lw/2+4,ly-ts*0.5,7,'#fff',t+1); ctx.globalAlpha=1;
+  spark(lx-lw/2+ts*0.2,ly-ts*0.55,10,'#fff3a0',t); spark(lx+lw/2+4,ly-ts*0.5,7,'#fff',t+1); ctx.globalAlpha=1;
   // règles en rubans
   const rows=[['TAP !','Pyon ! Reste appuyé pour sauter plus haut','#ffd3e6'],['DOUBLE !','Retape en l\'air : double saut','#d6ecff'],
     ['ÉTOILES','5 lucioles = un nouvel Ilimba','#fff1c2'],['GARE !','Corbeaux, ronces, slime… et la Brume !','#e6dbff']];
@@ -6189,7 +6199,7 @@ function drawTitle(){
   window.__titleBtn={x:bx,y:byy,w:bw,h:bw*0.36};
   ctx.globalAlpha=1; if(!window.__cover&&HK>0.03){ ctx.globalAlpha=HK; emaBtn(bx,byy,bw,'TOUCHE POUR JOUER',bfs,true); ctx.globalAlpha=1; }
   if(!window.__cover&&!MK.open&&HK>0.97&&!AU.woke&&!AU.muted){ const mr=muteRect(), k=0.5+0.5*Math.sin(t*3); ctx.save(); ctx.globalAlpha=0.65+0.35*k;
-    ctx.font='800 15px '+FU; ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.lineJoin='round'; const tx2='♪ musique ? touche l’écran'; ctx.strokeStyle='#fff6fb'; ctx.lineWidth=5; ctx.strokeText(tx2,mr.x-mr.r-10,mr.y); ctx.fillStyle='#8a4fb8'; ctx.fillText(tx2,mr.x-mr.r-10,mr.y);
+    ctx.font='800 '+Math.round(clamp(ts*0.18,12,15))+'px '+FU; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round'; const tx2='♪ musique ? touche l’écran', my=ly+ts*0.95+Math.max(20,ts*0.3); ctx.strokeStyle='#fff6fb'; ctx.lineWidth=5; ctx.strokeText(tx2,lx,my); ctx.fillStyle='#8a4fb8'; ctx.fillText(tx2,lx,my); // v0.50.4 : sous le titre, plus sur la guirlande
     ctx.strokeStyle='rgba(255,140,200,'+(0.4+0.4*k)+')'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(mr.x,mr.y,mr.r+4+k*4,0,7); ctx.stroke(); ctx.restore(); }
   if(game.musicT>0){ game.musicT-=1/60; const k=game.musicT/1.6; for(let i=0;i<5;i++){ const p=1-k; mangaText('♪',W*(0.2+i*0.12)+Math.sin(t*3+i)*10,H*0.55-p*H*0.25-i*8,32+i*3,['#ff8fc4','#b58cff','#8fd0ff'][i%3],{outerColor:'#fff'}); } }
   if(best>0&&!window.__cover&&HK>0.03){ ctx.globalAlpha=HK; if(port) recordCard(bx,byy+bw*0.18+8+rfs*0.95,best,rfs); else recordCard(lx,ly+ts*0.95+Math.round(clamp(ts*0.2,12,17))*0.7+10+rfs*0.95,best,rfs); ctx.globalAlpha=1; }
