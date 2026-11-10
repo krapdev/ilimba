@@ -96,7 +96,7 @@
    ========================================================= */
 
 /* ---------- Polices (chargées si réseau, sinon repli système) ---------- */
-const VERSION='0.50.2';
+const VERSION='0.50.3';
 const FD='"MochiyEmb","Mochiy Pop One","Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif';
 const FU='"ZenEmb","Zen Maru Gothic",system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif';
 try{ for(const f of ['40px MochiyEmb','700 20px ZenEmb','900 20px ZenEmb']) document.fonts.load(f,'Aあ'); document.fonts.load('40px MochiyEmb','ハカセぽ悪夢屋根裏墓所心臓'); }catch(e){} // katakana et quelques kanji/kana absents du sous-ensemble d'origine (police complétée)
@@ -557,14 +557,37 @@ function buildLayers(){
     g.setTransform(q,0,0,q,0,-t0*q); g.lineJoin='round'; g.lineCap='round';
     const saved=rnd; rnd=mulberry32(L.seed);
     try{ L.draw(g,L); }catch(e){ console.error(e); } finally{ rnd=saved; }
-    L.canvas=c; L.t0=t0; L.t1=t1;
+    L.canvas=c; L.t0=t0; L.t1=t1; L.runs=L.f<0.05||L.f>=0.5?layerRuns(c):null;
   }
 }
 function drawLayer(L,ox,oy){
   if(!L.canvas) return;
   const shift=((camX*L.f)%L.tw+L.tw)%L.tw;
+  if(L.runs&&!window.__fullLayers){ // v0.50.3 : on ne recopie que les morceaux non vides du calque (nuages, premier plan… surtout du vide)
+    const c=L.canvas, kx=(L.tw+0.6)/c.width, ky=(L.t1-L.t0)/c.height, R=L.runs;
+    for(let x=-shift;x<VW;x+=L.tw){ const bx=x+ox, by=L.t0+oy;
+      for(let i=0;i<R.length;i+=4){ const dx=bx+R[i]*kx, dw=R[i+2]*kx; if(dx>VW||dx+dw<0) continue; ctx.drawImage(c,R[i],R[i+1],R[i+2],R[i+3],dx,by+R[i+1]*ky,dw,R[i+3]*ky); } }
+    return; }
   for(let x=-shift;x<VW;x+=L.tw) ctx.drawImage(L.canvas,x+ox,L.t0+oy,L.tw+0.6,L.t1-L.t0);
 }
+function layerRuns(c){ // découpe un calque en rectangles non vides (colonnes de T px, plages verticales), fusionnés quand ils se suivent
+  const T=48, cw=c.width, ch=c.height, nx=Math.ceil(cw/T), ny=Math.ceil(ch/T); let d;
+  try{ d=c.getContext('2d').getImageData(0,0,cw,ch).data; }catch(e){ return null; }
+  const occ=new Uint8Array(nx*ny); let n=0;
+  for(let ty=0;ty<ny;ty++){ const y1=Math.min(ch,(ty+1)*T);
+    for(let tx=0;tx<nx;tx++){ const x0=tx*T, x1=Math.min(cw,x0+T); let hit=0;
+      for(let y=ty*T;y<y1&&!hit;y++){ const r=y*cw; for(let x=x0;x<x1;x++) if(d[(r+x)*4+3]>1){ hit=1; break; } }
+      if(hit){ occ[ty*nx+tx]=1; n++; } } }
+  if(n>nx*ny*0.8) return null; // presque plein : autant tout recopier d'un coup
+  const out=[]; let open=new Map();
+  for(let tx=0;tx<=nx;tx++){ const cur=new Map();
+    if(tx<nx){ let ty=0; while(ty<ny){ if(!occ[ty*nx+tx]){ ty++; continue; } const a=ty; while(ty<ny&&occ[ty*nx+tx]) ty++; cur.set(a+'_'+ty,[a,ty]); } }
+    for(const [k,r] of open){ if(cur.has(k)){ r.w+=1; cur.delete(k); cur.set(k,r); } else { // marge de 2 px côté vide : le lissage déborde un peu du dessin
+        const free=(cx)=>{ if(cx<0||cx>=nx) return true; for(let y=r.a;y<r.b;y++) if(occ[y*nx+cx]) return false; return true; };
+        const sx=Math.max(0,r.x*T-(free(r.x-1)?2:0)), sy=Math.max(0,r.a*T-2), ex=Math.min(cw,(r.x+r.w)*T+(free(r.x+r.w)?2:0)), ey=Math.min(ch,r.b*T+2);
+        out.push(sx,sy,ex-sx,ey-sy); } }
+    const nxt=new Map(); for(const [k,v] of cur) nxt.set(k,Array.isArray(v)?{x:tx,w:1,a:v[0],b:v[1]}:v); open=nxt; }
+  return out; }
 
 /* =========================================================
    ÉTAT DU JEU
@@ -590,7 +613,10 @@ const ACCS=['bow','flower','heart','bow','star'];
 /* ---------- Collection : les 12 Ilimbas ---------- */
 const OL='#2a1530';
 function bigBow(x,y,s,rot,c1,c2,pat,t){ // gros noeud emblématique
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rot+Math.sin(t*2.2)*0.04); ctx.scale(s,s); ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot+Math.sin(t*2.2)*0.04); ctx.scale(s,s);
+  if(!window.__rawBow&&curScale()<3.2){ blitSpr(vspr('bow'+c1+c2+pat,62,42,31,23,()=>bowShape(c1,c2,pat)),0,0); ctx.restore(); return; } // v0.50.3 : noeud en sprite (2 découpages + ~25 tracés en moins par perso)
+  bowShape(c1,c2,pat); ctx.restore(); }
+function bowShape(c1,c2,pat){ ctx.lineJoin='round'; ctx.lineCap='round';
   // rubans qui pendent
   for(const k of[-1,1]){ ctx.fillStyle=c2; ctx.strokeStyle=OL; ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(k*2,3); ctx.quadraticCurveTo(k*9,9,k*15,13); ctx.lineTo(k*13,9); ctx.lineTo(k*17,7); ctx.quadraticCurveTo(k*9,4,k*3,0); ctx.closePath(); ctx.fill(); ctx.stroke(); }
   // boucles
@@ -605,8 +631,7 @@ function bigBow(x,y,s,rot,c1,c2,pat,t){ // gros noeud emblématique
     ctx.strokeStyle='rgba(42,21,48,0.45)'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(k*4,-1); ctx.quadraticCurveTo(k*10,-6,k*16,-8); ctx.moveTo(k*4,1); ctx.quadraticCurveTo(k*10,3,k*16,4); ctx.stroke(); }
   // noeud central
   ctx.fillStyle=c2; ctx.strokeStyle=OL; ctx.lineWidth=2.2; ctx.beginPath(); ctx.roundRect(-5,-6,10,11,4); ctx.fill(); ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.ellipse(-1.5,-3,2,1.2,0,0,7); ctx.fill();
-  ctx.restore(); }
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.ellipse(-1.5,-3,2,1.2,0,0,7); ctx.fill(); }
 function sakuraPin(x,y,s,t){ ctx.save(); ctx.translate(x,y); ctx.scale(s,s); ctx.rotate(t*0.2); for(let k=0;k<5;k++){ ctx.rotate(Math.PI*2/5); ctx.fillStyle='#ffd0e4'; ctx.strokeStyle=OL; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(0,0); ctx.bezierCurveTo(-6,-6,-5,-13,-1.5,-13); ctx.lineTo(0,-11); ctx.lineTo(1.5,-13); ctx.bezierCurveTo(5,-13,6,-6,0,0); ctx.fill(); ctx.stroke(); } ctx.fillStyle='#ff6fa8'; ctx.beginPath(); ctx.arc(0,0,2.6,0,7); ctx.fill(); ctx.restore(); }
 function sprout(x,y,s,t){ ctx.save(); ctx.translate(x,y); ctx.scale(s,s); ctx.rotate(Math.sin(t*2)*0.12); ctx.strokeStyle=OL; ctx.lineWidth=3.6; ctx.beginPath(); ctx.moveTo(0,4); ctx.quadraticCurveTo(1,-6,0,-12); ctx.stroke(); ctx.strokeStyle='#5fa055'; ctx.lineWidth=2; ctx.stroke();
   for(const k of[-1,1]){ ctx.fillStyle=k<0?'#8fd06a':'#6fb84e'; ctx.strokeStyle=OL; ctx.lineWidth=1.8; ctx.beginPath(); ctx.moveTo(0,-11); ctx.bezierCurveTo(k*6,-22,k*18,-20,k*17,-12); ctx.bezierCurveTo(k*14,-6,k*5,-6,0,-11); ctx.fill(); ctx.stroke(); } ctx.restore(); }
@@ -1467,12 +1492,17 @@ function drawBrumeCached(sx,sy){
   const k=DPR*S, qf=DPR>=1.75?0.5:0.7, q=k*qf;
   const w=Math.ceil(cvs.width*qf), h=Math.ceil(cvs.height*qf);
   if(!BRC.c||BRC.c.width!==w||BRC.c.height!==h){ BRC.c=makeCanvas(w,h); BRC.g=BRC.c.getContext('2d'); }
-  const tail=lastMember(); let xr=brume.x+320*Math.max(1,brume.sc); if(tail&&game.danger>0.45) xr=Math.max(xr,tail.x+90);
-  const sw=Math.min(w,Math.ceil((xr-camX+60)*q)); if(sw<=2) return;
-  const g=BRC.g; g.setTransform(1,0,0,1,0,0); g.globalAlpha=1; g.globalCompositeOperation='source-over'; g.clearRect(0,0,w,h);
-  g.setTransform(q,0,0,q,-camX*q,OY*q); g.lineJoin='round'; g.lineCap='round';
-  const _kc=ctx; ctx=g; try{ drawBrume(); }catch(e){ console.error(e); } finally{ ctx=_kc; }
-  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.imageSmoothingEnabled=true; ctx.drawImage(BRC.c,0,0,sw,h,sx*k,sy*k,sw/qf,h/qf); ctx.restore();
+  // v0.50.3 : la Brume (fumée lente et floue) n'est redessinée que ~30 fois/s ; entre deux, la couche suit la Brume à l'écran → même rendu, moitié moins de travail
+  const rel=brume.x-camX, dtB=game.time-(BRC.t||0);
+  if(window.__brume60||!BRC.ok||BRC.q!==q||BRC.w!==w||dtB<0||dtB>=1/31||Math.abs(brume.sc-BRC.sc)>0.02||state!=='play'){
+    const tail=lastMember(); let xr=brume.x+320*Math.max(1,brume.sc); if(tail&&game.danger>0.45) xr=Math.max(xr,tail.x+90);
+    const sw=Math.min(w,Math.ceil((xr-camX+60)*q)); BRC.ok=false; if(sw<=2) return;
+    const g=BRC.g; g.setTransform(1,0,0,1,0,0); g.globalAlpha=1; g.globalCompositeOperation='source-over'; g.clearRect(0,0,Math.min(w,Math.max(sw,BRC.sw||0)+4),h);
+    g.setTransform(q,0,0,q,-camX*q,OY*q); g.lineJoin='round'; g.lineCap='round';
+    const _kc=ctx; ctx=g; try{ drawBrume(); }catch(e){ console.error(e); } finally{ ctx=_kc; }
+    BRC.ok=true; BRC.t=game.time; BRC.rel=rel; BRC.q=q; BRC.w=w; BRC.sw=sw; BRC.sc=brume.sc; }
+  const dx=(rel-BRC.rel)*k, sw=BRC.sw;
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.imageSmoothingEnabled=true; ctx.drawImage(BRC.c,0,0,sw,h,sx*k+dx,sy*k,sw/qf,h/qf); ctx.restore();
 }
 function lastMember(){ for(let i=members.length-1;i>=0;i--){ const m=members[i]; if(m&&Number.isFinite(m.x)&&Number.isFinite(m.y)) return m; } return null; }
 function updateWind(dt){
@@ -3951,18 +3981,16 @@ function drawBrume(){
     const y0=lerp(top+60,bot-60,hh), dd=(y0-cy)/380, ex=fx-78-110*dd*dd+50;
     puffG(ex+p*170*(0.6+hh*0.6), y0-p*110, 34+p*70, '40,16,62', Math.sin(Math.PI*p)*0.55);
   }
-  ctx.fillStyle='#241133'; ctx.fill(body);
-  ctx.save(); ctx.clip(body);
-  ctx.fillStyle=TONE.brume; ctx.fillRect(left-600,top,fx+700-left,bot-top);
+  ctx.fillStyle='#241133'; ctx.fill(body); ctx.fillStyle=TONE.brume; ctx.fill(body); // v0.50.3 : la trame suit le contour directement…
+  ctx.save(); ctx.clip(body); // …et un seul découpage pour tout l'intérieur (avant : deux)
   ctx.strokeStyle='#4a2a66'; ctx.lineWidth=3;
   for(let k=0;k<7;k++){ const bx=fx-120-k*45, by=cy+Math.sin(k*2.3)*240; ctx.beginPath(); ctx.arc(bx,by,30+k*6,t*0.8+k,t*0.8+k+2.4); ctx.stroke(); }
   // volutes internes plus claires
   for(let i=0;i<6;i++){ const p=((t*0.1+i/6)%1); puffG(fx-60-i*40,lerp(bot,top,p),60,'110,70,160',Math.sin(Math.PI*p)*0.18); }
-  ctx.restore();
   // visages spectraux dans le flou de la masse
-  { const keep=ctx.globalAlpha; ctx.save(); ctx.clip(body); drawBrumeFaces(fx,cy,t); ctx.globalAlpha=keep;
-    for(let i=0;i<9;i++){ const p=((t*0.07+i/9)%1); puffG(fx-40-((i*53)%180),lerp(bot,top,p),70+(i%3)*20,'36,18,54',0.18+0.14*Math.sin(Math.PI*p)); }
-    ctx.restore(); }
+  { const keep=ctx.globalAlpha; drawBrumeFaces(fx,cy,t); ctx.globalAlpha=keep;
+    for(let i=0;i<9;i++){ const p=((t*0.07+i/9)%1); puffG(fx-40-((i*53)%180),lerp(bot,top,p),70+(i%3)*20,'36,18,54',0.18+0.14*Math.sin(Math.PI*p)); } }
+  ctx.restore();
   // bord adouci : la masse se fond dans l'air
   for(let k=0;k<15;k++){ const b=blobs[k]; puffG(b[0]+b[2]*0.72,b[1],b[2]*0.95,'36,17,51',0.9); }
   drawBrumeFront(fx,cy,t,top,bot);
@@ -4030,10 +4058,16 @@ function drawParts(){
   }
 }
 function drawTexts(){
+  const ok=fontsReady();
   for(const t of texts){
     const u=t.life/t.max, s=t.life<0.14?Math.max(0.01,easeOutBack(t.life/0.14)):1, a=u>0.7?1-(u-0.7)/0.3:1;
-    ctx.save(); ctx.globalAlpha=a; ctx.translate(t.x,t.y); ctx.rotate(t.rot); ctx.scale(s,s);
-    mangaText(t.str,0,0,t.size,t.color); ctx.restore();
+    ctx.save(); ctx.globalAlpha=a; ctx.translate(t.x,t.y); ctx.rotate(t.rot);
+    if(ok&&!window.__rawText){ // v0.50.3 : texte en sprite (contours épais tracés une seule fois, plus à chaque image)
+      const sz=Math.round(t.size); if(!t.w){ ctx.font=sz+'px '+FD; t.w=ctx.measureText(t.str).width; }
+      const pw=t.w+sz*0.5+6, ph=sz*1.5+6, c=vspr('mt'+t.str+'|'+sz+'|'+t.color,pw,ph,pw/2,ph/2,()=>mangaText(t.str,0,0,sz,t.color));
+      ctx.scale(s,s); blitSpr(c,0,0); }
+    else { ctx.scale(s,s); mangaText(t.str,0,0,t.size,t.color); }
+    ctx.restore();
   }
 }
 
@@ -6272,9 +6306,11 @@ function bgDPR(){ return Math.min(DPR,Math.max(Math.min(DPR,1),DPR*BGQ[qLvl])); 
    Une seule recopie par image au lieu de 3 remplissages plein écran ; recalculé seulement quand un réglage change. ---------- */
 const OVL={c:null,g:null,key:''};
 function drawOverlay(){ const M=game.dzMix, play=(state==='play'||state==='pause')&&M, d=play?nmDepth():0, m7=play?M[7]||0:0, m8=play?M[8]||0:0, m9=play?M[9]||0:0, p=m9>0.01?hePulse():0, gk=(m7>0.01&&game.grin)?grinK():0;
-  const key=W+'x'+H+'|'+Math.round(d*40)+'|'+Math.round(m7*24)+'|'+Math.round(m8*24)+'|'+Math.round(m9*24)+'|'+Math.round(gk*12);
+  const dk=game.danger>0.05&&state!=='title'?Math.max(1,Math.round(game.danger*40)):0;
+  const key=W+'x'+H+'|'+Math.round(d*40)+'|'+Math.round(m7*24)+'|'+Math.round(m8*24)+'|'+Math.round(m9*24)+'|'+Math.round(gk*12)+'|'+dk;
   if(!OVL.c||OVL.c.width!==HALF.width||OVL.c.height!==HALF.height){ OVL.c=makeCanvas(HALF.width,HALF.height); OVL.g=OVL.c.getContext('2d'); OVL.key=''; }
   if(OVL.key!==key){ OVL.key=key; const g=OVL.g; g.setTransform(1,0,0,1,0,0); g.globalAlpha=1; g.clearRect(0,0,OVL.c.width,OVL.c.height);
+    if(dk){ const gr=g.createLinearGradient(0,0,W*0.5,0); gr.addColorStop(0,'rgba(48,10,70,'+(0.6*dk/40)+')'); gr.addColorStop(1,'rgba(48,10,70,0)'); g.fillStyle=gr; g.fillRect(0,0,W*0.5,H); } // ombre de la Brume (danger arrondi au 1/40)
     const top=-OY, H6=Math.max(400,VH), cx=VW*0.45, cy=top+H6*0.55, vig=(r0,r1,col,al)=>{ const gr=g.createRadialGradient(cx,cy,Math.min(VW,H6)*r0,cx,cy,Math.max(VW,H6)*r1); gr.addColorStop(0,'rgba('+col+',0)'); gr.addColorStop(1,'rgba('+col+','+al+')'); g.fillStyle=gr; g.fillRect(0,top,VW,H6); };
     g.setTransform(S,0,0,S,0,S*OY);
     if(m7>0.01){ g.globalAlpha=m7; vig(0.32,0.8,'20,0,18',0.62); if(gk>0){ g.globalAlpha=m7*0.35*gk; g.fillStyle='#0a0008'; g.fillRect(0,top,VW,H6); } }
@@ -6312,7 +6348,7 @@ function drawBackground(sx,sy,k){
   ctx.setTransform(1,0,0,1,0,0); ctx.imageSmoothingEnabled=true; ctx.drawImage(BGC.c,0,0,bw,bh,0,0,cvs.width,cvs.height); ctx.setTransform(k,0,0,k,0,k*OY); }
 function render(){
   if(H>W&&!window.__cover){ if(state==='play') pauseGame(); if(state==='pause') game.resumeT=0; ctx.setTransform(DPR,0,0,DPR,0,0); rotateScreen(game.time); return; }
-  const sh=game.shake||0, sx=sh?rr(-sh,sh):0, sy=sh?rr(-sh,sh):0, k=DPR*S;
+  const sh=game.shake||0, st=game.time, sx=sh?sh*(Math.sin(st*67)*0.62+Math.sin(st*109+1.7)*0.38):0, sy=sh?sh*(Math.sin(st*79+0.6)*0.6+Math.sin(st*127+2.9)*0.4):0, k=DPR*S; // v0.50.3 : tremblement continu (10–20 Hz) au lieu d'un saut au hasard à chaque image, qui ressemblait à des saccades à 120 Hz
   ctx.setTransform(k,0,0,k,0,k*OY);
   ctx.imageSmoothingEnabled=true;
   if(state==='title'){ ctx.setTransform(DPR,0,0,DPR,0,0); try{ drawTitle(); }catch(e){ console.error(e); safeTitle(); } try{ if(!window.__cover&&!MK.open&&MK.k<0.05&&!MI.open&&MI.k<0.05){ drawAlbumLantern(); drawMarketLantern(); MIS_HIT=null; homeTreeUI(); drawHomeMissions(); if(game.updAvail) drawUpdatePill(); else drawNewsKoala(); } if(!window.__cover){ drawMarket(); drawMissions(); } drawAlbum(); drawIosTip(); }catch(e){ console.error(e); } try{ drawReveal(); }catch(e){ console.error(e); } return; }
@@ -6364,11 +6400,7 @@ function render(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
   if(game.cine&&game.cine.rt<0.45){ const k=1-game.cine.rt/0.45, g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.35,W/2,H/2,Math.max(W,H)*0.7); g.addColorStop(0,'rgba(90,30,140,0)'); g.addColorStop(1,'rgba(90,30,140,'+(0.45*k)+')'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); }
   drawSpeedLines(); drawWindRush();
-  if(game.danger>0.05&&state!=='title'){
-    const g=ctx.createLinearGradient(0,0,W*0.5,0); g.addColorStop(0,'rgba(48,10,70,'+(0.6*game.danger)+')'); g.addColorStop(1,'rgba(48,10,70,0)');
-    ctx.fillStyle=g; ctx.fillRect(0,0,W*0.5,H);
-  }
-  drawOverlay();
+  drawOverlay(); // (v0.50.3 : l'ombre violette de la Brume, à gauche, est maintenant dans ce calque mis en cache)
   if(game.lightT>0&&state==='play'){ const k=game.lightT/1.0, g=ctx.createLinearGradient(W*0.6,0,0,0); g.addColorStop(0,'rgba(255,240,180,0)'); g.addColorStop(1,'rgba(255,236,170,'+(0.45*k)+')'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); }
   if(game.flash>0.02){ ctx.fillStyle='rgba(255,255,255,'+game.flash*0.6+')'; ctx.fillRect(0,0,W,H); }
   if(state==='over'&&overT>1.2){ if(!OVS.c||OVS.c.width!==cvs.width||OVS.c.height!==cvs.height) OVS.c=makeCanvas(cvs.width,cvs.height); const g=OVS.c.getContext('2d'); g.setTransform(1,0,0,1,0,0); g.drawImage(cvs,0,0); OVS.ok=true; }
